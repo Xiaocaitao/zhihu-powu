@@ -1,6 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { CapabilityContext, DomainCapability } from "../../contracts/capability.ts";
+import { toToolSchema } from "./schema.ts";
 
 export function adaptDomainCapabilities(
   capabilities: readonly DomainCapability[],
@@ -11,7 +12,7 @@ export function adaptDomainCapabilities(
     name: capability.name,
     label: capability.name,
     description: capability.description,
-    parameters: Type.Unsafe(capability.inputSchema as any),
+    parameters: Type.Unsafe(toToolSchema(capability.inputSchema) as any),
     replay: "never" as const,
     execute: async (_id, args, signal) => {
       signal?.throwIfAborted();
