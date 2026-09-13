@@ -3,9 +3,9 @@ import { test } from "node:test";
 import { mkdtemp, writeFile, rm, symlink, open } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createZhihuTools } from "../src/agent/tools.ts";
-import { ZhihuClient, type ClientOptions } from "../src/zhihu/client.ts";
-import { MAX_FILE_BYTES } from "../src/zhihu/uploads.ts";
+import { createZhihuTools } from "../src/agent/tools/zhihu.ts";
+import { ZhihuClient, type ClientOptions } from "../src/integrations/zhihu/client.ts";
+import { MAX_FILE_BYTES } from "../src/integrations/zhihu/uploads.ts";
 
 const clientWith = (fetch: typeof globalThis.fetch, options: ClientOptions = {}) => new ZhihuClient({ accessSecret: "platform-secret", fetch, ...options });
 const getTool = (client: ZhihuClient, name: string) => createZhihuTools(client).find(tool => tool.name === name)!;
