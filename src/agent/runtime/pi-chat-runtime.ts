@@ -6,14 +6,18 @@ import { createZhihuTools } from "../tools/zhihu.ts";
 import { adaptTools } from "../tools/pi-adapter.ts";
 import { buildPrompt } from "../prompts/system.ts";
 import type { ChatRuntime, Emit, Transcript } from "../../modules/chat/contracts.ts";
+import type { CapabilityContext } from "../../contracts/capability.ts";
+import type { CapabilityRegistry } from "../tools/registry.ts";
+import { adaptDomainCapabilities } from "../tools/domain-adapter.ts";
 
-export type PiChatRuntimeOptions = { modelId?: string; apiKey?: string; baseUrl?: string; client?: ZhihuClient };
+export type PiChatRuntimeOptions = { modelId?: string; apiKey?: string; baseUrl?: string; client?: ZhihuClient; capabilityRegistry?: CapabilityRegistry };
 
 export class PiChatRuntime implements ChatRuntime {
   private model: Model<any>;
   private apiKey: string;
   private client: ZhihuClient;
   private baseUrl: string;
+  private capabilityRegistry?: CapabilityRegistry;
   constructor(options: PiChatRuntimeOptions = {}) {
     const modelId = options.modelId ?? process.env.PI_MODEL ?? "";
     this.apiKey = options.apiKey ?? process.env.PI_API_KEY ?? "";
@@ -21,15 +25,19 @@ export class PiChatRuntime implements ChatRuntime {
     if (!this.apiKey || !modelId) throw new Error("PI_API_KEY and PI_MODEL are required");
     this.model = createDoubaoModels(modelId, this.baseUrl).getModel("doubao", modelId)!;
     this.client = options.client ?? new ZhihuClient();
+    this.capabilityRegistry = options.capabilityRegistry;
   }
-  async run(input: { message: string; sessionId: string; history: Transcript; signal: AbortSignal }, emit: Emit): Promise<Transcript> {
+  async run(input: { message: string; sessionId: string; history: Transcript; signal: AbortSignal; context?: CapabilityContext }, emit: Emit): Promise<Transcript> {
     const agent = new Agent({
       streamFn: async (model, context, options) => {
         const models = createDoubaoModels(model.id, this.baseUrl);
         return models.streamSimple(model, context, { ...options, cacheRetention: "none", reasoning: "high", maxRetries: 1, maxRetryDelayMs: 3000 });
       },
       getApiKey: () => this.apiKey,
-      initialState: { systemPrompt: await buildPrompt(input), model: this.model, thinkingLevel: "high", messages: input.history as AgentMessage[], tools: adaptTools(createZhihuTools(this.client)) },
+      initialState: { systemPrompt: await buildPrompt(input), model: this.model, thinkingLevel: "high", messages: input.history as AgentMessage[], tools: [
+        ...adaptTools(createZhihuTools(this.client)),
+        ...(input.context && this.capabilityRegistry ? adaptDomainCapabilities(this.capabilityRegistry.forContext(input.context), input.context) : []),
+      ] },
       sessionId: input.sessionId,
       maxRetryDelayMs: 3000,
     });
