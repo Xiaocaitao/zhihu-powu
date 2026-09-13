@@ -15,6 +15,13 @@ import type { CapabilityRegistry } from "./agent/tools/registry.ts";
 import type { PromptContext } from "./agent/prompts/system.ts";
 import { PostgresKnowledgeStore } from "./modules/knowledge/postgres-repository.ts";
 import type { KnowledgeStore, KnowledgeUpload } from "./modules/knowledge/contracts.ts";
+import { createDefaultCapabilityRegistry } from "./app/composition-root.ts";
+import { PostgresProfileRepository } from "./modules/profile/postgres-repository.ts";
+import { PostgresCareerRepository } from "./modules/career/postgres-repository.ts";
+import { PostgresLearningRepository } from "./modules/learning/postgres-repository.ts";
+import { PostgresEvidenceRepository } from "./modules/evidence/postgres-repository.ts";
+import { EvidenceApplication } from "./modules/evidence/application.ts";
+import { EvidenceService } from "./modules/evidence/service.ts";
 
 type Options = { chatService?: ChatService; knowledgeStore?: KnowledgeStore; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider; capabilityRegistry?: CapabilityRegistry; promptContext?: PromptContext };
 const owners = new Map<string, string>();
@@ -208,5 +215,5 @@ async function readMultipart(req: IncomingMessage): Promise<{ fields: Record<str
   if (!Object.keys(fields).length && !files.length) throw new ChatError("body_required", 400);
   return { fields, files };
 }
-export async function startPowuServer(options: Options = {}): Promise<Server> { const pool = createPool(); await ensureSchema(pool); const service = options.chatService ?? new ChatService(new PostgresChatStore(pool), new PiChatRuntime({ capabilityRegistry: options.capabilityRegistry, promptContext: options.promptContext })); const server = createPowuServer({ ...options, chatService: service, knowledgeStore: options.knowledgeStore ?? new PostgresKnowledgeStore(pool), readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }) }); server.once("close", () => void pool.end()); await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); }); }); return server; }
+export async function startPowuServer(options: Options = {}): Promise<Server> { const pool = createPool(); await ensureSchema(pool); const evidence = new EvidenceApplication(new EvidenceService(), new PostgresEvidenceRepository(pool)); const capabilityRegistry = options.capabilityRegistry ?? createDefaultCapabilityRegistry({ profile: new PostgresProfileRepository(pool), evidence, career: new PostgresCareerRepository(pool), learning: new PostgresLearningRepository(pool) }); const service = options.chatService ?? new ChatService(new PostgresChatStore(pool), new PiChatRuntime({ capabilityRegistry, promptContext: options.promptContext })); const server = createPowuServer({ ...options, capabilityRegistry, chatService: service, knowledgeStore: options.knowledgeStore ?? new PostgresKnowledgeStore(pool), readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }) }); server.once("close", () => void pool.end()); await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); }); }); return server; }
 if (process.argv[1] === fileURLToPath(import.meta.url)) startPowuServer().catch(error => { console.error(error); process.exitCode = 1; });

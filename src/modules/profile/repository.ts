@@ -1,0 +1,9 @@
+import type { ProfileFactDTO, ProfileFactPayload, ProfileSection, UserGoalDTO, UserProfileDTO, ProfileCompletionDTO, ProfileFactType, ProfileFactSource } from './contracts.ts';
+export interface ProfileRepository { getFacts(ownerId:string, sections?:ProfileSection[]): Promise<ProfileFactDTO[]>; getGoals(ownerId:string):Promise<UserGoalDTO[]>; saveFact(ownerId:string, fact: Omit<ProfileFactDTO,'id'|'version'|'updatedAt'>, expectedVersion?:number):Promise<ProfileFactDTO>; saveGoal(ownerId:string, value:{direction:string|null}, expectedVersion?:number):Promise<UserGoalDTO>; }
+export class MemoryProfileRepository implements ProfileRepository {
+ private facts=new Map<string,Map<ProfileFactType,ProfileFactDTO>>(); private goals=new Map<string,UserGoalDTO>();
+ async getFacts(ownerId:string, sections?:ProfileSection[]){const all=[...(this.facts.get(ownerId)?.values()??[])]; return sections?.length?all.filter(f=>sections.includes(f.section)):all;}
+ async getGoals(ownerId:string){const g=this.goals.get(ownerId); return g?[g]:[];}
+ async saveFact(ownerId:string, fact: Omit<ProfileFactDTO,'id'|'version'|'updatedAt'>, expectedVersion?:number){let m=this.facts.get(ownerId); if(!m){m=new Map();this.facts.set(ownerId,m)} const old=m.get(fact.factType); if(expectedVersion!==undefined&&old?.version!==expectedVersion) throw new Error('VERSION_CONFLICT'); const next={...fact,id:old?.id??crypto.randomUUID(),version:(old?.version??0)+1,updatedAt:new Date().toISOString()}; m.set(fact.factType,next); return next;}
+ async saveGoal(ownerId:string,value:{direction:string|null},expectedVersion?:number){const old=this.goals.get(ownerId); if(expectedVersion!==undefined&&old?.version!==expectedVersion) throw new Error('VERSION_CONFLICT'); const next={id:old?.id??crypto.randomUUID(),goalType:'target_direction' as const,value,version:(old?.version??0)+1,updatedAt:new Date().toISOString()}; this.goals.set(ownerId,next); return next;}
+}

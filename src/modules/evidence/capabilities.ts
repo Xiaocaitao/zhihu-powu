@@ -1,0 +1,20 @@
+import type { EvidenceContext } from "./contracts.ts";
+
+export function createEvidenceCapabilities(service: any) {
+  const object = (properties: Record<string, unknown> = {}, required: string[] = []) => ({ type: "object", properties, required, additionalProperties: false });
+  return [
+    { name: "get_learning_records", description: "查询当前用户学习记录", inputSchema: object({ from: { type: "string" }, to: { type: "string" }, taskId: { type: "string" }, skillId: { type: "string" } }), execute: async (ctx: EvidenceContext, input: any) => await service.getLearningRecords(ctx, input) },
+    { name: "record_learning_evidence", description: "保存学习活动或项目成果", inputSchema: object({ kind: { enum: ["activity", "project_outcome"] }, title: { type: "string" }, content: { type: "string" }, occurredAt: { type: "string" }, durationMinutes: { type: "number" }, taskId: { type: "string" }, skillIds: { type: "array", items: { type: "string" } } }, ["kind", "title", "content", "occurredAt"]), execute: async (ctx: EvidenceContext, input: any) => await service.recordLearningEvidence(ctx, input) },
+    { name: "update_learning_evidence", description: "补充、修正或撤回学习成果", inputSchema: object({ recordId: { type: "string" }, changes: { type: "object" } }, ["recordId", "changes"]), execute: async (ctx: EvidenceContext, input: any) => await service.updateLearningEvidence(ctx, input.recordId, input.changes) },
+    { name: "get_skill_evidence", description: "查询能力证据", inputSchema: object({ skillId: { type: "string" } }), execute: async (ctx: EvidenceContext, input: any) => await service.getSkillEvidence(ctx, input.skillId) },
+    { name: "evaluate_learning_evidence", description: "评估成果支持的能力", inputSchema: object({ evidenceIds: { type: "array", items: { type: "string" } }, skillIds: { type: "array", items: { type: "string" } } }, ["evidenceIds", "skillIds"]), execute: async (ctx: EvidenceContext, input: any) => await service.evaluateLearningEvidence(ctx, input.evidenceIds, input.skillIds) },
+    { name: "generate_learning_review", description: "生成阶段复盘", inputSchema: object({ from: { type: "string" }, to: { type: "string" } }, ["from", "to"]), execute: async (ctx: EvidenceContext, input: any) => await service.generateLearningReview(ctx, input.from, input.to) },
+    { name: "get_learning_reviews", description: "查询阶段复盘", inputSchema: object(), execute: async (ctx: EvidenceContext) => await service.getLearningReviews(ctx) },
+    { name: "start_interview", description: "开始文字模拟面试", inputSchema: object({ target: { type: "object" }, questionCount: { type: "integer", minimum: 1, maximum: 20 } }, ["target"]), execute: async (ctx: EvidenceContext, input: any) => await service.startInterview(ctx, input.target, input.questionCount) },
+    { name: "get_interview_session", description: "读取面试会话", inputSchema: object({ interviewId: { type: "string" } }, ["interviewId"]), execute: async (ctx: EvidenceContext, input: any) => await service.getInterviewSession(ctx, input.interviewId) },
+    { name: "submit_interview_answer", description: "提交面试回答", inputSchema: object({ interviewId: { type: "string" }, questionId: { type: "string" }, answer: { type: "string" } }, ["interviewId", "questionId", "answer"]), execute: async (ctx: EvidenceContext, input: any) => await service.submitInterviewAnswer(ctx, input.interviewId, input.questionId, input.answer) },
+    { name: "finish_interview", description: "结束模拟面试", inputSchema: object({ interviewId: { type: "string" } }, ["interviewId"]), execute: async (ctx: EvidenceContext, input: any) => await service.finishInterview(ctx, input.interviewId) },
+    { name: "get_interview_feedback", description: "读取面试反馈", inputSchema: object({ interviewId: { type: "string" } }, ["interviewId"]), execute: async (ctx: EvidenceContext, input: any) => await service.getInterviewFeedback(ctx, input.interviewId) },
+    { name: "get_interview_records", description: "查询历史面试", inputSchema: object(), execute: async (ctx: EvidenceContext) => await service.getInterviewRecords(ctx) },
+  ];
+}
