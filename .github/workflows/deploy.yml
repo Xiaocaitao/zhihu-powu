@@ -97,6 +97,7 @@ jobs:
           ACR_IMAGE: ${{ env.IMAGE }}
           POSTGRES_IMAGE: ${{ env.POSTGRES_IMAGE }}
           CADDY_IMAGE: ${{ env.CADDY_IMAGE }}
+          CADDYFILE_PATH: /var/snap/docker/common/powu/Caddyfile
           APP_PORT: 3000
           DOMAIN: ${{ vars.APP_DOMAIN }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -109,15 +110,21 @@ jobs:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
-          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,ACR_IMAGE,POSTGRES_IMAGE,CADDY_IMAGE,APP_PORT,DOMAIN,POSTGRES_PASSWORD,PI_PROVIDER,PI_MODEL,PI_BASE_URL,PI_API_KEY,ZHIHU_ACCESS_SECRET
+          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,ACR_IMAGE,POSTGRES_IMAGE,CADDY_IMAGE,CADDYFILE_PATH,APP_PORT,DOMAIN,POSTGRES_PASSWORD,PI_PROVIDER,PI_MODEL,PI_BASE_URL,PI_API_KEY,ZHIHU_ACCESS_SECRET
           script: |
             set -eu
             install -d -m 755 /opt/powu
+            # Ubuntu's Docker Snap cannot bind-mount files from /opt. Keep
+            # the upload in /opt for deployment files, then copy Caddyfile to
+            # a Docker-accessible path under the Snap data directory.
+            install -d -m 755 "$(dirname "$CADDYFILE_PATH")"
+            install -m 644 /opt/powu/Caddyfile "$CADDYFILE_PATH"
             umask 077
             printf '%s\n' \
               "ACR_IMAGE=${ACR_IMAGE}" \
               "POSTGRES_IMAGE=${POSTGRES_IMAGE}" \
               "CADDY_IMAGE=${CADDY_IMAGE}" \
+              "CADDYFILE_PATH=${CADDYFILE_PATH}" \
               "APP_PORT=${APP_PORT}" \
               "DOMAIN=${DOMAIN}" \
               "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" \
