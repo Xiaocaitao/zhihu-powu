@@ -20,6 +20,8 @@ export class EvidenceApplication {
   }
 
   async updateLearningEvidence(ctx: EvidenceContext, recordId: string, changes: Parameters<EvidenceService["updateLearningEvidence"]>[2]) {
+    const existing = await this.repository.getRecord(ctx.ownerId, recordId);
+    if (existing) this.service.hydrateRecord(existing);
     const result = this.service.updateLearningEvidence(ctx, recordId, changes);
     if (result.ok && result.changed && result.data?.record) await this.repository.updateRecord(result.data.record);
     return result;
@@ -32,11 +34,15 @@ export class EvidenceApplication {
     return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取能力证据", data: { items: [...groups].map(([skillId, recordIds]) => ({ skillId, support: recordIds.length > 1 ? "supported" : "partial", rationale: "基于已保存记录，仍需结合具体材料验证", recordIds })) } };
   }
   async evaluateLearningEvidence(ctx: EvidenceContext, evidenceIds: string[], skillIds: string[]) {
+    const records = await this.repository.listRecords(ctx.ownerId, {});
+    records.filter(record => evidenceIds.includes(record.recordId)).forEach(record => this.service.hydrateRecord(record));
     const result = this.service.evaluateLearningEvidence(ctx, evidenceIds, skillIds);
     if (result.ok && result.data?.assessment) await this.repository.saveAssessment(result.data.assessment);
     return result;
   }
   async generateLearningReview(ctx: EvidenceContext, from: string, to: string) {
+    const records = await this.repository.listRecords(ctx.ownerId, { from, to });
+    records.forEach(record => this.service.hydrateRecord(record));
     const result = this.service.generateLearningReview(ctx, from, to);
     if (result.ok && result.data?.review) await this.repository.saveReview(result.data.review);
     return result;
@@ -61,12 +67,15 @@ export class EvidenceApplication {
   async finishInterview(ctx: EvidenceContext, interviewId: string) {
     const existing = await this.repository.getInterview(ctx.ownerId, interviewId);
     if (!existing) return { ok: false, changed: false, domain: "evidence" as const, status: "rejected" as const, summary: "面试不存在", error: { code: "NOT_FOUND", message: "面试不存在" } };
+    this.service.hydrateInterview(existing);
     const result = this.service.finishInterview(ctx, interviewId);
     if (result.ok && result.data?.interview) await this.repository.saveInterview(result.data.interview);
     return result;
   }
 
   async submitInterviewAnswer(ctx: EvidenceContext, interviewId: string, questionId: string, text: string) {
+    const existing = await this.repository.getInterview(ctx.ownerId, interviewId);
+    if (existing) this.service.hydrateInterview(existing);
     const result = this.service.submitInterviewAnswer(ctx, interviewId, questionId, text);
     const answer = result.ok && result.data && "answer" in result.data ? result.data.answer as { answerId: string; text: string; feedback?: string } : undefined;
     if (result.ok && result.changed && answer && this.repository.saveAnswer) {
