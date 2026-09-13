@@ -73,9 +73,13 @@ export class ZhihuClient {
     const a = s.knowledgeUploadInput.parse(input);
     this.#transport.requireAuth();
     const file = await prepareUpload(a.file_path, this.#files, false);
+    return this.uploadKnowledgeBlob({ blob: file.blob, filename: file.name, knowledgeBaseId: a.knowledge_base_id }, context);
+  }
+  async uploadKnowledgeBlob(input: { blob: Blob; filename: string; knowledgeBaseId?: string }, context: RequestContext = {}) {
+    this.#transport.requireAuth();
     const body = new FormData();
-    body.set("File", file.blob, file.name);
-    if (a.knowledge_base_id) body.set("KnowledgeBaseID", a.knowledge_base_id);
+    body.set("File", input.blob, input.filename);
+    if (input.knowledgeBaseId) body.set("KnowledgeBaseID", input.knowledgeBaseId);
     return this.#transport.request("/api/v1/knowledge/files", s.knowledgeUploadData, { ...context, method: "POST", body, long: true });
   }
   searchKnowledge(input: unknown, context: RequestContext = {}) {

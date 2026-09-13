@@ -11,6 +11,9 @@ export type KnowledgeFile = {
   size_bytes: number;
   url: string;
   created_at: string;
+  remote_knowledge_base_id?: string | null;
+  remote_recall_content_id?: string | null;
+  sync_status?: "synced" | "failed";
 };
 
 export interface KnowledgeStore {

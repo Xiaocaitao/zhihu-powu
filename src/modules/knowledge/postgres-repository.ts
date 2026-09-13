@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { openAsBlob } from "node:fs";
 import { basename, join } from "node:path";
 import type { Pool } from "pg";
 import type { KnowledgeFile, KnowledgeStore, KnowledgeUpload } from "./contracts.ts";
+import { ZhihuClient } from "../../integrations/zhihu/client.ts";
 
 export class PostgresKnowledgeStore implements KnowledgeStore {
   private readonly pool: Pool;
   private readonly uploadRoot: string;
-  constructor(pool: Pool, uploadRoot = process.env.UPLOAD_DIR ?? join(process.cwd(), "uploads")) { this.pool = pool; this.uploadRoot = uploadRoot; }
+  private readonly zhihu: ZhihuClient;
+  private readonly knowledgeBaseId?: string;
+  constructor(pool: Pool, zhihu = new ZhihuClient(), uploadRoot = process.env.UPLOAD_DIR ?? join(process.cwd(), "uploads"), knowledgeBaseId = process.env.ZHIHU_KNOWLEDGE_BASE_ID) { this.pool = pool; this.zhihu = zhihu; this.uploadRoot = uploadRoot; this.knowledgeBaseId = knowledgeBaseId; }
 
   async save(owner: string, upload: KnowledgeUpload) {
     const id = randomUUID();
@@ -19,22 +23,29 @@ export class PostgresKnowledgeStore implements KnowledgeStore {
     await mkdir(directory, { recursive: true });
     await writeFile(path, upload.data, { flag: "wx" });
     try {
+      const remote = await this.zhihu.uploadKnowledgeBlob({ blob: await openAsBlob(path), filename: originalName, knowledgeBaseId: this.knowledgeBaseId });
       const result = await this.pool.query<KnowledgeFile>(
-        `INSERT INTO knowledge_files (id, owner, original_name, stored_name, mime_type, size_bytes)
-         VALUES ($1,$2,$3,$4,$5,$6)
-         RETURNING id, original_name, mime_type, size_bytes::int AS size_bytes, '/api/knowledge/files/' || id AS url, created_at::text AS created_at`,
-        [id, owner, originalName, storedName, (upload.contentType || "application/octet-stream").split(";", 1)[0].trim().toLowerCase(), upload.data.byteLength],
+        `INSERT INTO knowledge_files (id, owner, original_name, stored_name, mime_type, size_bytes, remote_knowledge_base_id, remote_recall_content_id, sync_status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'synced')
+         RETURNING id, original_name, mime_type, size_bytes::int AS size_bytes, remote_knowledge_base_id, remote_recall_content_id, sync_status, '/api/knowledge/files/' || id AS url, created_at::text AS created_at`,
+        [id, owner, originalName, storedName, (upload.contentType || "application/octet-stream").split(";", 1)[0].trim().toLowerCase(), upload.data.byteLength, remote.data.KnowledgeBaseID, remote.data.RecallContentID],
       );
       return result.rows[0];
     } catch (error) {
-      await unlink(path).catch(() => undefined);
+      try {
+        await this.pool.query(
+          `INSERT INTO knowledge_files (id, owner, original_name, stored_name, mime_type, size_bytes, sync_status)
+           VALUES ($1,$2,$3,$4,$5,$6,'failed')`,
+          [id, owner, originalName, storedName, (upload.contentType || "application/octet-stream").split(";", 1)[0].trim().toLowerCase(), upload.data.byteLength],
+        );
+      } catch { await unlink(path).catch(() => undefined); }
       throw error;
     }
   }
 
   async list(owner: string) {
     const result = await this.pool.query<KnowledgeFile>(
-      `SELECT id, original_name, mime_type, size_bytes::int AS size_bytes,
+      `SELECT id, original_name, mime_type, size_bytes::int AS size_bytes, remote_knowledge_base_id, remote_recall_content_id, sync_status,
               '/api/knowledge/files/' || id AS url, created_at::text AS created_at
          FROM knowledge_files WHERE owner=$1 ORDER BY created_at DESC`,
       [owner],
@@ -44,7 +55,7 @@ export class PostgresKnowledgeStore implements KnowledgeStore {
 
   async get(owner: string, id: string) {
     const result = await this.pool.query<KnowledgeFile & { stored_name: string }>(
-      `SELECT id, original_name, mime_type, size_bytes::int AS size_bytes, stored_name,
+      `SELECT id, original_name, mime_type, size_bytes::int AS size_bytes, remote_knowledge_base_id, remote_recall_content_id, sync_status, stored_name,
               '/api/knowledge/files/' || id AS url, created_at::text AS created_at
          FROM knowledge_files WHERE id=$1 AND owner=$2`,
       [id, owner],
