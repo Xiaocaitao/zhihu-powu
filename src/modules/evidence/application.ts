@@ -78,12 +78,10 @@ export class EvidenceApplication {
     if (existing) this.service.hydrateInterview(existing);
     const result = this.service.submitInterviewAnswer(ctx, interviewId, questionId, text);
     const answer = result.ok && result.data && "answer" in result.data ? result.data.answer as { answerId: string; text: string; feedback?: string } : undefined;
-    if (result.ok && result.changed && answer && this.repository.saveAnswer) {
-      await this.repository.saveAnswer({ answerId: answer.answerId, ownerId: ctx.ownerId, interviewId, questionId, text: answer.text });
-      if (this.repository.saveAnswerFeedback && answer.feedback) await this.repository.saveAnswerFeedback({ answerId: answer.answerId, ownerId: ctx.ownerId, status: "succeeded", result: { feedback: answer.feedback } });
-      // Keep the interview header in sync with the durable answer row. History
-      // reads answered_count from ei_interviews, while answers live in ei_answers.
-      if (result.data && "interview" in result.data) await this.repository.saveInterview(result.data.interview as any);
+    if (result.ok && result.changed && answer && result.data && "interview" in result.data) {
+      // Persist the aggregate in one repository transaction: header count,
+      // answer row and feedback must either all commit or all roll back.
+      await this.repository.saveInterview(result.data.interview as any);
     }
     return result;
   }
@@ -91,10 +89,17 @@ export class EvidenceApplication {
   async getInterviewRecords(ctx: EvidenceContext) {
     if (this.repository.listInterviews) {
       const items = await this.repository.listInterviews(ctx.ownerId);
-      return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取面试历史", data: { items } };
+      const active = items.find(item => item.status === "active");
+      const session = active ? await this.repository.getInterview(ctx.ownerId, active.interviewId) : null;
+      return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取面试历史", data: { items, session } };
     }
     return this.service.getInterviewRecords(ctx);
   }
 
-  async getInterviewFeedback(ctx: EvidenceContext, interviewId: string) { return this.service.getInterviewFeedback(ctx, interviewId); }
+  async getInterviewFeedback(ctx: EvidenceContext, interviewId: string) {
+    const interview = await this.repository.getInterview(ctx.ownerId, interviewId);
+    if (!interview) return { ok: false, changed: false, domain: "evidence" as const, status: "rejected" as const, summary: "面试不存在", error: { code: "NOT_FOUND", message: "面试不存在" } };
+    this.service.hydrateInterview(interview);
+    return this.service.getInterviewFeedback(ctx, interviewId);
+  }
 }

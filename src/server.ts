@@ -142,7 +142,7 @@ export function createPowuServer(options: Options = {}): Server {
       const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
       const records = options.capabilityRegistry.list().find(capability => capability.name === "get_interview_records");
       if (!records) return send(res, 503, { ok: false, error: "interview_unavailable" });
-      try { const result = await records.execute(context, {}); if (!result.ok) return send(res, 502, { ok: false, error: "interview_read_failed" }); return send(res, 200, { ok: true, items: (result.data as { items?: unknown[] } | undefined)?.items ?? [] }); }
+      try { const result = await records.execute(context, {}); if (!result.ok) return send(res, 502, { ok: false, error: "interview_read_failed" }); const data = result.data as { items?: unknown[]; session?: unknown } | undefined; return send(res, 200, { ok: true, items: data?.items ?? [], session: data?.session ?? null }); }
       catch (error) { console.error("interview read failed", error); return send(res, 502, { ok: false, error: "interview_read_failed" }); }
     }
     const knowledgeFile = path.match(/^\/api\/knowledge\/files\/([0-9a-f-]+)$/i)?.[1];
