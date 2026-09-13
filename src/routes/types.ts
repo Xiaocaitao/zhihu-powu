@@ -49,8 +49,13 @@ export type RouteRecord = {
   created_at: string;
 };
 
+export type RouteProgress = {
+  stage: string;
+  message: string;
+};
+
 export interface RouteAgent {
-  generate(input: RouteRequest, signal?: AbortSignal): Promise<RoutePlan>;
+  generate(input: RouteRequest, signal?: AbortSignal, onProgress?: (event: RouteProgress) => void): Promise<RoutePlan>;
 }
 
 export interface RouteRepository {
