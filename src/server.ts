@@ -6,6 +6,7 @@ import { createPool, ensureSchema } from "./db/postgres.ts";
 import { PiRouteAgent } from "./agent/pi-route-agent.ts";
 import { PostgresRouteRepository } from "./routes/postgres-repository.ts";
 import { RouteService } from "./routes/service.ts";
+import { routeRequestSchema } from "./routes/types.ts";
 
 type PowuServerOptions = {
   routeService?: RouteService;
@@ -46,6 +47,18 @@ export function createPowuServer(options: PowuServerOptions = {}): Server {
       return;
     }
 
+    const asset = path.match(/^\/assets\/(kanshan-front\.jpg|idle\.gif|wander\.gif)$/)?.[1];
+    if (asset && request.method === "GET") {
+      try {
+        const body = await readFile(new URL(`../public/assets/${asset}`, import.meta.url));
+        response.setHeader("content-type", asset.endsWith(".jpg") ? "image/jpeg" : "image/gif");
+        response.end(body);
+      } catch {
+        sendJson(response, 404, { error: "not_found" });
+      }
+      return;
+    }
+
     if (path === "/api/routes" && request.method === "POST") {
       if (!options.routeService) {
         sendJson(response, 503, { ok: false, error: "route_service_unavailable" });
@@ -54,17 +67,39 @@ export function createPowuServer(options: PowuServerOptions = {}): Server {
 
       try {
         const body = await readJsonBody(request);
+        routeRequestSchema.parse(body);
         const controller = new AbortController();
         const abort = () => controller.abort();
         request.once("aborted", abort);
-        let record;
+        response.statusCode = 200;
+        response.setHeader("content-type", "text/event-stream; charset=utf-8");
+        response.setHeader("cache-control", "no-cache, no-transform");
+        response.setHeader("connection", "keep-alive");
+        response.setHeader("x-accel-buffering", "no");
+        writeSse(response, "progress", { stage: "accepted", message: "已接收请求，正在准备路线" });
+        const heartbeat = setInterval(() => {
+          if (!response.destroyed && !response.writableEnded) response.write(": heartbeat\n\n");
+        }, 15000);
+        const stopHeartbeat = () => clearInterval(heartbeat);
+        response.once("close", stopHeartbeat);
         try {
-          record = await options.routeService.create(body, controller.signal);
+          const record = await options.routeService.create(body, controller.signal, event => {
+            writeSse(response, "progress", event);
+          });
+          writeSse(response, "complete", record);
         } finally {
+          stopHeartbeat();
+          response.removeListener("close", stopHeartbeat);
           request.removeListener("aborted", abort);
         }
-        sendJson(response, 201, record);
+        response.end();
       } catch (error) {
+        if (response.headersSent) {
+          console.error("route generation failed", error);
+          writeSse(response, "error", { error: "route_generation_failed" });
+          response.end();
+          return;
+        }
         if (
           error instanceof ZodError ||
           error instanceof SyntaxError ||
@@ -134,6 +169,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 function sendJson(response: import("node:http").ServerResponse, status: number, body: unknown): void {
   response.statusCode = status;
   response.end(JSON.stringify(body));
+}
+
+function writeSse(response: import("node:http").ServerResponse, event: string, data: unknown): void {
+  if (response.writableEnded || response.destroyed) return;
+  response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
 async function readJsonBody(request: import("node:http").IncomingMessage): Promise<unknown> {

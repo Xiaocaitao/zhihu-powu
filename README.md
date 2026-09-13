@@ -4,6 +4,8 @@
 
 完整 endpoint、参数与限制见 [API 覆盖清单](docs/api-tools.md)。原始产品需求见 [PRD](docs/PRD.md)。
 
+后续开发的分层和需求接入规则见 [项目基础骨架与需求接入方案](docs/architecture-refactor-plan.md)。
+
 ## 工具分组
 
 | 分组 | 工具 |
@@ -54,6 +56,14 @@ npm start
 
 ```bash
 curl -X POST http://127.0.0.1:3000/api/routes \
+  -H 'content-type: application/json' \
+  -d '{"goal":"成为后端开发者","background":"计算机专业大二","profile":{"weekly_hours":10}}'
+```
+
+`POST /api/routes` 返回 `text/event-stream`，会持续推送 `progress` 事件，最后通过 `complete` 事件返回完整路线。使用 curl 验证时加 `-N` 可实时看到执行日志：
+
+```bash
+curl -N -X POST http://127.0.0.1:3000/api/routes \
   -H 'content-type: application/json' \
   -d '{"goal":"成为后端开发者","background":"计算机专业大二","profile":{"weekly_hours":10}}'
 ```

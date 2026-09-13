@@ -11,7 +11,7 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { getModel, streamSimple as builtinStreamSimple } from "@earendil-works/pi-ai/compat";
 import { ZhihuClient } from "../zhihu/client.ts";
 import { createZhihuTools } from "./tools.ts";
-import { routePlanSchema, type RouteAgent, type RoutePlan, type RouteRequest } from "../routes/types.ts";
+import { routePlanSchema, type RouteAgent, type RoutePlan, type RouteProgress, type RouteRequest } from "../routes/types.ts";
 
 const systemPrompt = `你是“破雾”的职业成长路线 Agent，服务对象是计算机专业大学生。
 你的任务是基于用户目标和知乎搜索结果，生成可解释、可执行的两周成长路线。
@@ -54,7 +54,7 @@ export class PiRouteAgent implements RouteAgent {
     this.baseUrl = options.baseUrl ?? process.env.PI_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3";
   }
 
-  async generate(input: RouteRequest, signal?: AbortSignal): Promise<RoutePlan> {
+  async generate(input: RouteRequest, signal?: AbortSignal, onProgress?: (event: RouteProgress) => void): Promise<RoutePlan> {
     if (!this.apiKey) throw new Error("PI_API_KEY is required");
     const runtime = this.resolveRuntime();
     const agent = new Agent({
@@ -67,6 +67,18 @@ export class PiRouteAgent implements RouteAgent {
         messages: [],
       },
     });
+    const unsubscribe = agent.subscribe(event => {
+      if (event.type === "agent_start") {
+        onProgress?.({ stage: "agent_started", message: "Pi Agent 已启动" });
+      } else if (event.type === "tool_execution_start" && event.toolName === "search_zhihu") {
+        onProgress?.({ stage: "searching", message: "正在搜索知乎真实经验" });
+      } else if (event.type === "tool_execution_end" && event.toolName === "search_zhihu") {
+        onProgress?.({
+          stage: event.isError ? "search_failed" : "search_completed",
+          message: event.isError ? "知乎搜索未成功，继续整理已有信息" : "知乎经验搜索完成，正在生成路线",
+        });
+      }
+    });
 
     if (signal?.aborted) throw new Error("request aborted");
     const abort = () => agent.abort();
@@ -76,6 +88,7 @@ export class PiRouteAgent implements RouteAgent {
       if (signal?.aborted) throw new Error("request aborted");
       return routePlanSchema.parse(JSON.parse(extractJson(lastAssistantText(agent))));
     } finally {
+      unsubscribe();
       signal?.removeEventListener("abort", abort);
     }
   }
