@@ -41,6 +41,8 @@ services:
       # OAuth 未配置时网站仍可启动；点击登录会提示服务端补齐配置。
       ZHIHU_OAUTH_APP_KEY: ${ZHIHU_OAUTH_APP_KEY:-}
       ZHIHU_OAUTH_REDIRECT_URI: ${ZHIHU_OAUTH_REDIRECT_URI:-}
+    volumes:
+      - powu-uploads:/app/uploads
     ports:
       - "127.0.0.1:${APP_PORT:-3000}:3000"
 
@@ -66,5 +68,6 @@ services:
 
 volumes:
   powu-postgres-data:
+  powu-uploads:
   caddy-data:
   caddy-config:

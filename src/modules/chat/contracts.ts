@@ -5,6 +5,7 @@ export const chatRequestSchema = z.object({
   message: z.string().min(1).max(32000).refine(value => value.trim().length > 0),
   request_id: z.uuid(),
   session_id: z.uuid().optional(),
+  attachments: z.array(z.object({ id: z.uuid(), original_name: z.string(), mime_type: z.string(), size_bytes: z.number().int().nonnegative(), url: z.string(), created_at: z.string() })).max(10).optional(),
 }).strict();
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 export type ChatEvent = { type: string; [key: string]: unknown };
