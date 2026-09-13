@@ -3,6 +3,13 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { CapabilityContext, DomainCapability } from "../../contracts/capability.ts";
 import { toToolSchema } from "./schema.ts";
 
+const resultStatuses = new Set(["read", "applied", "draft_created", "confirmation_required", "rejected"]);
+function validateCapabilityResult(value: unknown): value is { ok: boolean; changed: boolean; domain: string; status: string; summary: string } {
+  if (!value || typeof value !== "object") return false;
+  const result = value as Record<string, unknown>;
+  return typeof result.ok === "boolean" && typeof result.changed === "boolean" && typeof result.domain === "string" && typeof result.status === "string" && resultStatuses.has(result.status) && typeof result.summary === "string";
+}
+
 export function adaptDomainCapabilities(
   capabilities: readonly DomainCapability[],
   context: CapabilityContext,
@@ -22,6 +29,10 @@ export function adaptDomainCapabilities(
       }
       try {
         const result = await capability.execute({ ...context, operationKey: `${context.operationKey}:${_id}`, signal }, args);
+        if (!validateCapabilityResult(result)) {
+          const invalid = { ok: false, changed: false, domain: capability.name.split("_")[0], status: "rejected", summary: "工具返回结果不符合协议，请修正后重试", error: { code: "INVALID_ARGUMENT", message: "TOOL_OUTPUT_INVALID", retryable: false } };
+          return { content: [{ type: "text" as const, text: JSON.stringify(invalid) }], details: invalid };
+        }
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
       } catch (error) {
         signal?.throwIfAborted();
