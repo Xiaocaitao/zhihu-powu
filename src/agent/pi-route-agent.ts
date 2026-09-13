@@ -54,7 +54,7 @@ export class PiRouteAgent implements RouteAgent {
     this.baseUrl = options.baseUrl ?? process.env.PI_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3";
   }
 
-  async generate(input: RouteRequest, signal?: AbortSignal, onProgress?: (event: RouteProgress) => void, onDelta?: (delta: string) => void): Promise<RoutePlan> {
+  async generate(input: RouteRequest, signal?: AbortSignal, onProgress?: (event: RouteProgress) => void, onDelta?: (delta: string, channel?: "text" | "thinking") => void): Promise<RoutePlan> {
     if (!this.apiKey) throw new Error("PI_API_KEY is required");
     const runtime = this.resolveRuntime();
     const agent = new Agent({
@@ -71,7 +71,9 @@ export class PiRouteAgent implements RouteAgent {
       if (event.type === "agent_start") {
         onProgress?.({ stage: "agent_started", message: "Pi Agent 已启动" });
       } else if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-        onDelta?.(event.assistantMessageEvent.delta);
+        onDelta?.(event.assistantMessageEvent.delta, "text");
+      } else if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") {
+        onDelta?.(event.assistantMessageEvent.delta, "thinking");
       } else if (event.type === "tool_execution_start" && event.toolName === "search_zhihu") {
         onProgress?.({ stage: "searching", message: "正在搜索知乎真实经验" });
       } else if (event.type === "tool_execution_end" && event.toolName === "search_zhihu") {
@@ -148,7 +150,7 @@ export function createDoubaoModels(modelId: string, baseUrl = "https://ark.cn-be
     api: "openai-responses",
     provider: "doubao",
     baseUrl,
-    reasoning: false,
+    reasoning: true,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128000,

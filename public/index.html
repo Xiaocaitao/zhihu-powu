@@ -151,7 +151,8 @@
           const details = error.issues?.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('；');
           throw new Error(details || error.error || '请求失败，请稍后重试');
         }
-        const record = await readRouteStream(response, log, delta => {
+        const record = await readRouteStream(response, log, (delta, channel) => {
+          if (channel === 'thinking') appendLogLine(log, '正在思考…');
           streamBubble.dataset.raw = (streamBubble.dataset.raw || '') + delta;
           streamBubble.innerHTML = markdown(streamBubble.dataset.raw);
         });
@@ -225,7 +226,7 @@
           const event = parseSseBlock(block);
           if (!event) continue;
           if (event.name === 'progress') appendLogLine(log, event.data.message || '处理中');
-          if (event.name === 'delta') onDelta?.(event.data.delta || '');
+          if (event.name === 'delta') onDelta?.(event.data.delta || '', event.data.channel || 'text');
           if (event.name === 'complete') { record = event.data; appendLogLine(log, '完成，路线已保存', false); log.lastElementChild.classList.add('done'); }
           if (event.name === 'error') throw new Error(event.data.error || '路线生成失败');
         }
@@ -233,7 +234,7 @@
       }
       if (buffer.trim()) {
         const event = parseSseBlock(buffer);
-        if (event?.name === 'delta') onDelta?.(event.data.delta || '');
+        if (event?.name === 'delta') onDelta?.(event.data.delta || '', event.data.channel || 'text');
         if (event?.name === 'complete') record = event.data;
         if (event?.name === 'error') throw new Error(event.data.error || '路线生成失败');
       }

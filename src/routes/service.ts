@@ -12,7 +12,7 @@ export class RouteService {
     this.agent = agent;
   }
 
-  async create(input: unknown, signal?: AbortSignal, onProgress?: (event: RouteProgress) => void, onDelta?: (delta: RouteDelta) => void): Promise<RouteRecord> {
+  async create(input: unknown, signal?: AbortSignal, onProgress?: (event: RouteProgress) => void, onDelta?: (delta: RouteDelta, channel?: "text" | "thinking") => void): Promise<RouteRecord> {
     const request = routeRequestSchema.parse(input);
     const created = await this.repository.createRequest(request);
     onProgress?.({ stage: "request_saved", message: "请求已保存，开始生成路线" });
