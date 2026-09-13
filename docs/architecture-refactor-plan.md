@@ -49,12 +49,12 @@ GET /api/sessions/:id：仅所属浏览器/身份可读取已保存的用户消�
 
 ## 基础设施约束
 - 新增 chat_sessions、chat_runs 表，版本迁移可重复执行；旧表不动。
-- 会话归属用服务端生成的 HttpOnly SameSite cookie（数据库仅保存摘要），可配置 API Bearer 门禁；不是完整账号登录系统。生产需 HTTPS 和上游限流。
+- 会话归属优先使用已登录知乎 `uid`，未登录时回退到服务端生成的 HttpOnly SameSite 匿名 Cookie；数据库查询同时限定用户 owner 与 session_id，确保用户隔离和会话隔离。生产需 HTTPS 和上游限流。
 - PostgreSQL advisory lock 防止同会话并行运行，request_id 唯一约束防止重复执行。断连/停止/超时传到 Pi 和工具。
 - 不自动重跑整轮 Agent 或工具；provider 连接级重试由 Pi SDK 承担并受总超时约束。中途失败保留展示事件，后续上下文只继承已成功的完整 Pi transcript。
 - 进程中断后下次获取同会话锁时将遗留 running 请求标记 interrupted；不会静默重放。
 - 请求日志只写 request_id、状态、耗时，不记录密钥和整段用户内容。
-- 会话上下文上限显式报错，不静默截断或填充。自动压缩、列表管理 UI、OAuth 登录和写工具审批 UI 暂不实现。
+- 会话上下文上限显式报错，不静默截断或填充。自动压缩和写工具审批 UI 暂不实现。
 
 ## 工具与提示词
 复用全部 21 个工具的定义、描述和 JSON Schema，通过统一 Pi adapter 接入。
