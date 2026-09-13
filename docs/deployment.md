@@ -44,12 +44,13 @@ flowchart LR
     L[docker-compose pull/up]
     M[PostgreSQL 健康检查]
     N[/readyz 健康检查]
-    O[公网服务 :3000]
+    O[Caddy :80/:443 HTTPS]
+    P[Node 内部 :3000]
   end
 
   D --> E --> F
   F -->|失败，继续修改| C
-  F -->|通过| G --> H --> I --> J --> K --> L --> M --> N --> O
+  F -->|通过| G --> H --> I --> J --> K --> L --> M --> N --> O --> P
 ```
 
 关键点：
@@ -59,6 +60,7 @@ flowchart LR
 - 合并后不需要再登录 ECS 手动执行 Docker 命令。
 - 队员只需要 GitHub Write 权限，不需要 ECS、ACR 或 SSH 权限。
 - ECS 的 SSH 私钥只保存在 GitHub Actions Secrets 中，由 Deploy Action 使用。
+- Caddy 负责公网 HTTPS、证书自动续期和 HTTP 到 HTTPS 重定向；Node 只绑定 ECS 本机的 `127.0.0.1:3000`。
 
 工作流文件是 `.github/workflows/deploy.yml`。它只在 `main` push 或手动触发，并且只有仓库变量 `DEPLOY_ENABLED` 为 `true` 时才会真正部署。
 
@@ -70,9 +72,10 @@ flowchart LR
 | `.github/workflows/deploy.yml` | 构建镜像、推送 ACR、部署 ECS |
 | `Dockerfile` | 定义应用镜像 |
 | `deploy/docker-compose.yml` | ECS 上的应用和 PostgreSQL 容器启动配置 |
+| `deploy/Caddyfile` | HTTPS 反向代理和 SSE 长连接配置 |
 | `docs/PRD.md` | 产品需求文档 |
 
-当前 MVP 提供以下 HTTP 接口：
+当前 MVP 在 Caddy 后提供以下 HTTPS 接口（Node 内部仍使用 HTTP）：
 
 - `/`：返回服务运行状态
 - `/healthz`：健康检查，返回 `{"ok":true}`
@@ -82,7 +85,7 @@ flowchart LR
 
 ### Pi 和 PostgreSQL
 
-应用容器使用 Pi Agent 调用 `search_zhihu`，再输出结构化行业画像、能力地图和两周计划。ECS 上的 Compose 会同时启动 `powu` 和 `postgres`，应用通过 PostgreSQL 环境变量连接数据库，首次启动自动建表。由于 ECS 可能无法访问 Docker Hub，Actions 会先把 `postgres:16-alpine` 镜像同步到 ACR，ECS 只从 ACR 拉取镜像。
+应用容器使用 Pi Agent 调用 `search_zhihu`，再输出结构化行业画像、能力地图和两周计划。ECS 上的 Compose 会同时启动 `powu`、`postgres` 和 Caddy，应用通过 PostgreSQL 环境变量连接数据库，首次启动自动建表。由于 ECS 可能无法访问 Docker Hub，Actions 会先把 `postgres:16-alpine` 和 `caddy:2-alpine` 镜像同步到 ACR，ECS 只从 ACR 拉取镜像。
 
 在 GitHub Actions 中额外配置：
 
@@ -94,6 +97,7 @@ flowchart LR
 | Variable | `PI_PROVIDER` | 默认 `doubao` |
 | Variable | `PI_MODEL` | 火山方舟控制台创建的 Endpoint ID，必填 |
 | Variable | `PI_BASE_URL` | 默认 `https://ark.cn-beijing.volces.com/api/v3` |
+| Variable | `APP_DOMAIN` | Caddy 使用的公网域名，例如 `powu.example.com`，必填 |
 
 `POSTGRES_PASSWORD`、`PI_API_KEY` 和 `ZHIHU_ACCESS_SECRET` 只会由 Actions 写入 ECS 的 `/opt/powu/.env`，该文件权限为 `0600`，不会进入 Git 或 Docker 镜像。队员不需要这些密钥，也不需要 ECS 权限。
 
@@ -208,7 +212,7 @@ docker --version
 docker-compose version
 ```
 
-确保 `ECS_SSH_KEY` 对应的公钥已经在 ECS 用户的 `~/.ssh/authorized_keys` 中。当前 MVP 会直接监听 ECS 的 `0.0.0.0:3000`，需要在 ECS 安全组放行 TCP 3000；后续再换成 Nginx/Caddy 反向代理和域名。
+确保 `ECS_SSH_KEY` 对应的公钥已经在 ECS 用户的 `~/.ssh/authorized_keys` 中。部署前需要将域名 A 记录解析到 ECS 公网 IP，并在 GitHub Actions Variables 配置 `APP_DOMAIN`。Caddy 会自动申请和续期证书，应用端口 `3000` 仅绑定 ECS 本机，不应对公网开放。
 
 ## 验证与回滚
 
@@ -217,14 +221,15 @@ docker-compose version
 | 端口 | 协议 | 来源 | 用途 |
 |---|---|---|---|
 | 22 | TCP | 团队固定 IP 或必要范围 | GitHub Actions SSH 部署 |
-| 3000 | TCP | 0.0.0.0/0（仅临时） | 公网访问 MVP |
+| 80 | TCP | 0.0.0.0/0 | ACME HTTP-01 验证和 HTTP 跳转 |
+| 443 | TCP | 0.0.0.0/0 | 公网 HTTPS 访问 |
 
-比赛演示可以临时开放 3000。长期运行时应限制来源 IP，或改用 Nginx/Caddy 的 80/443 端口和域名。
+不需要开放 3000；该端口只供 ECS 本机健康检查使用。
 
 合并到 `main` 后，在 GitHub 的 `Actions -> Deploy` 查看运行结果。成功后，ECS 上的验证命令为：
 
 ```bash
-curl --fail http://101.201.101.252:3000/healthz
+curl --fail https://<APP_DOMAIN>/healthz
 docker-compose --env-file /opt/powu/.env -f /opt/powu/docker-compose.yml ps
 ```
 
@@ -233,7 +238,7 @@ docker-compose --env-file /opt/powu/.env -f /opt/powu/docker-compose.yml ps
 ```bash
 docker-compose --env-file /opt/powu/.env -f /opt/powu/docker-compose.yml pull
 docker-compose --env-file /opt/powu/.env -f /opt/powu/docker-compose.yml up -d
-curl --fail http://101.201.101.252:3000/healthz
+curl --fail https://<APP_DOMAIN>/healthz
 ```
 
 ## 日常协同开发
@@ -279,11 +284,12 @@ git push -u origin feature/<姓名>-<功能>
 在 ECS 执行：
 
 ~~~bash
-ss -lntp | grep 3000
+ss -lntp | grep -E ':(80|443|3000)'
 curl http://127.0.0.1:3000/healthz
+curl --fail https://<APP_DOMAIN>/healthz
 ~~~
 
-如果本机成功、公网失败，通常是安全组没有放行 TCP 3000，或者规则来源范围不正确。
+如果本机成功、公网失败，通常是域名没有解析到 ECS、证书申请失败，或安全组没有放行 TCP 80/443。
 
 ## 比赛现场最短清单
 
@@ -297,10 +303,11 @@ curl http://127.0.0.1:3000/healthz
 [ ] ECS 安装 docker.io、docker-compose、curl
 [ ] ECS 写入 GitHub Actions 对应的 SSH 公钥
 [ ] ECS 创建 /opt/powu
-[ ] 安全组放行 TCP 22 和临时 TCP 3000
+[ ] 安全组放行 TCP 22、80 和 443
 [ ] 配置 DEPLOY_ENABLED=true
-[ ] 配置 10 个 GitHub Secrets（包括 `POSTGRES_PASSWORD`、`PI_API_KEY`、`ZHIHU_ACCESS_SECRET`）
+[ ] 配置 `APP_DOMAIN` Actions Variable
+[ ] 配置 GitHub Secrets（包括 `POSTGRES_PASSWORD`、`PI_API_KEY`、`ZHIHU_ACCESS_SECRET`）
 [ ] 创建测试 PR，确认 test 通过
 [ ] 合并 main，确认 Deploy 通过
-[ ] 公网访问 http://<ECS公网IP>:3000/healthz
+[ ] 公网访问 https://<APP_DOMAIN>/healthz
 ~~~
