@@ -82,11 +82,18 @@ export const getUserProfileInputSchema = z.object({ sections: z.array(z.enum(pro
 export const getProfileCompletionInputSchema = z.object({ includeMissingFields: z.boolean().optional() });
 export const saveProfileFactInputSchema = z.object({
   factType: z.enum(profileFactTypes).exclude(["target_direction"]),
-  value: z.unknown(),
+  // Keep the value shape visible to the Agent tool schema. `z.unknown()` was
+  // rendered as `{}`, so the model commonly sent a string for a text fact and
+  // the service rejected an otherwise valid user request.
+  value: z.union([
+    z.object({ text: nonEmpty }),
+    z.object({ items: z.array(nonEmpty).min(1) }),
+    z.object({ summary: nonEmpty }),
+    z.object({ hours: z.number().nonnegative() }),
+  ]),
   source: z.enum(["user_input", "user_confirmed", "assessment"]),
   isConfirmed: z.boolean().optional(),
   evidenceRef: z.object({ evidenceId: nonEmpty, evaluatedAt: nonEmpty }).optional(),
   expectedVersion: z.number().int().positive().optional(),
 });
 export const updateUserGoalInputSchema = z.object({ direction: z.string().trim().nullable(), expectedVersion: z.number().int().positive().optional() });
-
