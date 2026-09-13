@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,8 @@ import { EvidenceService } from "./modules/evidence/service.ts";
 type Options = { chatService?: ChatService; knowledgeStore?: KnowledgeStore; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider; capabilityRegistry?: CapabilityRegistry; promptContext?: PromptContext };
 type OAuthSession = { state?: string; stateVerified?: boolean; accessToken?: string; expiresAt?: number; profile?: ZhihuOAuthProfile; error?: { code: string; message: string } };
 const oauthSessions = new Map<string, OAuthSession>();
+const oauthCookieName = "powu_auth";
+export function resetOAuthSessionsForTests() { oauthSessions.clear(); }
 export function createPowuServer(options: Options = {}): Server {
   const oauth = options.oauth ?? createZhihuOAuth();
   return createServer(async (req, res) => {
@@ -36,7 +38,7 @@ export function createPowuServer(options: Options = {}): Server {
     if (path.startsWith("/assets/") && req.method === "GET") { const name = path.slice(8); if (!name || name.includes("..") || name.includes("\\")) return send(res, 404, { error: "not_found" }); const types: Record<string,string> = { ".js":"text/javascript; charset=utf-8", ".gif":"image/gif", ".jpg":"image/jpeg", ".png":"image/png" }; return serve(res, `../public/assets/${name}`, types[name.slice(name.lastIndexOf(".")).toLowerCase()] ?? "application/octet-stream"); }
     if (path === "/api/auth/zhihu/status" && req.method === "GET") {
       const session = oauthSession(req, res);
-      const authorized = Boolean(session.accessToken && session.expiresAt && session.expiresAt > Date.now() && session.profile);
+      const authorized = Boolean(session.expiresAt && session.expiresAt > Date.now() && session.profile);
       return send(res, 200, { ok: true, authorized, profile: authorized ? session.profile : null, uid: authorized ? session.profile?.uid : null, state_verified: session.stateVerified ?? null, error: session.error ?? null });
     }
     if (path === "/auth/zhihu/start" && req.method === "GET") {
@@ -67,6 +69,7 @@ export function createPowuServer(options: Options = {}): Server {
         session.profile = profile;
         session.state = undefined;
         session.error = undefined;
+        appendCookie(res, serializeOAuthCookie(session));
         return redirect(res, "/?oauth=success", res.getHeader("set-cookie"));
       } catch (error) {
         session.accessToken = undefined;
@@ -74,12 +77,14 @@ export function createPowuServer(options: Options = {}): Server {
         session.profile = undefined;
         session.state = undefined;
         session.error = oauthError(error);
+        appendCookie(res, expireOAuthCookie());
         return redirect(res, "/?oauth=error", res.getHeader("set-cookie"));
       }
     }
     if (path === "/api/auth/zhihu/logout" && req.method === "POST") {
       const session = oauthSession(req, res);
       session.accessToken = undefined; session.expiresAt = undefined; session.profile = undefined; session.state = undefined; session.stateVerified = undefined; session.error = undefined;
+      appendCookie(res, expireOAuthCookie());
       return send(res, 200, { ok: true });
     }
     if (path === "/api/knowledge/files" && req.method === "GET") {
@@ -177,14 +182,42 @@ export function createPowuServer(options: Options = {}): Server {
 function oauthSession(req: IncomingMessage, res: ServerResponse) {
   const owner = cookieOwner(req, res);
   let session = oauthSessions.get(owner);
-  if (!session) { session = {}; oauthSessions.set(owner, session); }
+  if (!session) { session = readOAuthCookie(req) ?? {}; oauthSessions.set(owner, session); }
   return session;
 }
 function authenticatedOwner(req: IncomingMessage, res: ServerResponse) {
   const anonymousOwner = cookieOwner(req, res);
-  const session = oauthSessions.get(anonymousOwner);
-  if (session?.accessToken && session.expiresAt && session.expiresAt > Date.now() && session.profile?.uid) return `zhihu:${session.profile.uid}`;
+  const session = oauthSessions.get(anonymousOwner) ?? readOAuthCookie(req);
+  if (session?.expiresAt && session.expiresAt > Date.now() && session.profile?.uid) return `zhihu:${session.profile.uid}`;
   return anonymousOwner;
+}
+function oauthSecret() { return process.env.OAUTH_SESSION_SECRET?.trim() || process.env.ZHIHU_OAUTH_APP_KEY?.trim() || "powu-development-oauth-session-secret"; }
+function serializeOAuthCookie(session: OAuthSession) {
+  if (!session.profile?.uid || !session.expiresAt) return expireOAuthCookie();
+  const { uid, hash_id, fullname, gender, headline, description, avatar_path, url } = session.profile;
+  const profile = { uid, hash_id, fullname, gender, headline, description, avatar_path, url };
+  const payload = Buffer.from(JSON.stringify({ expiresAt: session.expiresAt, profile })).toString("base64url");
+  const signature = createHmac("sha256", oauthSecret()).update(payload).digest("base64url");
+  const secure = process.env.COOKIE_SECURE === "true" || (process.env.NODE_ENV === "production" && process.env.COOKIE_SECURE !== "false");
+  return `${oauthCookieName}=${payload}.${signature}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000))}${secure ? "; Secure" : ""}`;
+}
+function expireOAuthCookie() { return `${oauthCookieName}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`; }
+function readOAuthCookie(req: IncomingMessage): OAuthSession | undefined {
+  const raw = req.headers.cookie?.match(new RegExp(`(?:^|; )${oauthCookieName}=([^;]+)`))?.[1];
+  if (!raw) return undefined;
+  const [payload, signature] = raw.split(".");
+  if (!payload || !signature) return undefined;
+  const expected = createHmac("sha256", oauthSecret()).update(payload).digest("base64url");
+  if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString()) as OAuthSession;
+    return parsed.expiresAt && parsed.expiresAt > Date.now() && parsed.profile?.uid ? parsed : undefined;
+  } catch { return undefined; }
+}
+function appendCookie(res: ServerResponse, cookie: string) {
+  const current = res.getHeader("set-cookie");
+  const values = Array.isArray(current) ? current.map(String) : typeof current === "string" ? [current] : [];
+  res.setHeader("set-cookie", [...values, cookie]);
 }
 function sameSecret(a: string, b: string) { return a.length === b.length && Buffer.from(a).equals(Buffer.from(b)); }
 function oauthError(error: unknown) { return { code: error instanceof Error && "code" in error ? String((error as { code?: unknown }).code) : "OAUTH_FAILED", message: error instanceof Error ? error.message : "知乎 OAuth 登录失败，请重试。" }; }
