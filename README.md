@@ -1,10 +1,10 @@
 # 破雾 · 知乎开放平台 Tools
 
-对照 2026-08-31 官方文档，提供 **21 个 TypeScript 工具**，覆盖所有给出具体请求协议的接口，包括 OAuth 授权地址构造。当前 MVP 使用 Pi Agent 编排知乎搜索，使用 PostgreSQL 保存路线请求和生成结果。
+对照 2026-08-31 官方文档，提供 **21 个 TypeScript 工具**。Pi runtime 自主编排模型与工具，PostgreSQL 保存通用会话事件。
 
 完整 endpoint、参数与限制见 [API 覆盖清单](docs/api-tools.md)。原始产品需求见 [PRD](docs/PRD.md)。
 
-后续开发的分层和需求接入规则见 [项目基础骨架与需求接入方案](docs/architecture-refactor-plan.md)。
+当前分层和需求接入规则见 [云 Agent 助手架构](docs/architecture-refactor-plan.md)。
 
 ## 工具分组
 
@@ -44,7 +44,7 @@ npm run typecheck
 npm test
 ```
 
-## 路线 MVP
+## 通用聊天
 
 启动服务前，在 `.env` 中配置 `DATABASE_URL`、`PI_PROVIDER`、火山方舟 Endpoint ID（`PI_MODEL`）、`PI_API_KEY` 和可选的 `PI_BASE_URL`。服务启动时会自动创建所需的两张 PostgreSQL 表。
 
@@ -52,29 +52,29 @@ npm test
 npm start
 ```
 
-创建路线：
+发送任意消息：
 
 ```bash
-curl -X POST http://127.0.0.1:3000/api/routes \
+curl -N -X POST http://127.0.0.1:3000/api/chat \
   -H 'content-type: application/json' \
-  -d '{"goal":"成为后端开发者","background":"计算机专业大二","profile":{"weekly_hours":10}}'
+  -d '{"message":"你好","request_id":"00000000-0000-4000-8000-000000000001"}'
 ```
 
-`POST /api/routes` 返回 `text/event-stream`，会持续推送 `progress` 事件，最后通过 `complete` 事件返回完整路线。使用 curl 验证时加 `-N` 可实时看到执行日志：
+`POST /api/chat` 返回 `text/event-stream`，包含文本、供应商实际返回的思考摘要和工具生命周期事件；前端直接增量渲染 Markdown，不解析成固定业务 JSON：
 
 ```bash
-curl -N -X POST http://127.0.0.1:3000/api/routes \
+curl -N -X POST http://127.0.0.1:3000/api/chat \
   -H 'content-type: application/json' \
-  -d '{"goal":"成为后端开发者","background":"计算机专业大二","profile":{"weekly_hours":10}}'
+  -d '{"message":"请解释 SSE","request_id":"00000000-0000-4000-8000-000000000002"}'
 ```
 
-查询路线：
+查询会话：
 
 ```bash
-curl http://127.0.0.1:3000/api/routes/<route_id>
+curl http://127.0.0.1:3000/api/sessions/<session_id>
 ```
 
-请求链路是：HTTP 接口校验请求 → PostgreSQL 保存 processing → Pi 调用 `search_zhihu` → Pi 输出结构化路线 → PostgreSQL 保存 completed；失败时会保存 failed 状态。`/healthz` 用于存活检查，`/readyz` 用于数据库就绪检查。
+请求链路是：HTTP 校验协议 → 会话存储与同会话锁 → Pi runtime 自主循环（模型/工具/事件）→ 保存透明事件和 transcript；失败或取消保留明确状态。旧 /api/routes 返回 410，不删除历史数据。`/healthz` 用于存活检查，`/readyz` 用于数据库就绪检查。
 
 失败输出 `ok: false` 并使用非零退出码。不自动重试、不自动翻页、不自动轮询或下载结果文件。
 

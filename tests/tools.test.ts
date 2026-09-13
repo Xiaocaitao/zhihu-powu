@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createZhihuTools } from "../src/agent/tools.ts";
-import { ZhihuClient } from "../src/zhihu/client.ts";
+import { createZhihuTools } from "../src/agent/tools/zhihu.ts";
+import { ZhihuClient } from "../src/integrations/zhihu/client.ts";
 
 const source = {
   Title: "测试资料", ContentID: "1903044959663284716", ContentType: "Answer",

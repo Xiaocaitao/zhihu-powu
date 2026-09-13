@@ -9,8 +9,8 @@ import {
 } from "@earendil-works/pi-ai";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { getModel, streamSimple as builtinStreamSimple } from "@earendil-works/pi-ai/compat";
-import { ZhihuClient } from "../zhihu/client.ts";
-import { createZhihuTools } from "./tools.ts";
+import { ZhihuClient } from "../integrations/zhihu/client.ts";
+import { createZhihuTools } from "./tools/zhihu.ts";
 import { routePlanSchema, type RouteAgent, type RoutePlan, type RouteProgress, type RouteRequest } from "../routes/types.ts";
 
 const systemPrompt = `你是“看山助手”，一个真诚、清晰、务实的成长规划助手。
