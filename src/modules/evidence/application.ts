@@ -47,4 +47,22 @@ export class EvidenceApplication {
     if (result.ok && result.data?.interview) await this.repository.saveInterview(result.data.interview);
     return result;
   }
+
+  async submitInterviewAnswer(ctx: EvidenceContext, interviewId: string, questionId: string, text: string) {
+    const result = this.service.submitInterviewAnswer(ctx, interviewId, questionId, text);
+    const answer = result.ok && result.data && "answer" in result.data ? result.data.answer as { answerId: string; text: string; feedback?: string } : undefined;
+    if (result.ok && result.changed && answer && this.repository.saveAnswer) {
+      await this.repository.saveAnswer({ answerId: answer.answerId, ownerId: ctx.ownerId, interviewId, questionId, text: answer.text });
+      if (this.repository.saveAnswerFeedback && answer.feedback) await this.repository.saveAnswerFeedback({ answerId: answer.answerId, ownerId: ctx.ownerId, status: "succeeded", result: { feedback: answer.feedback } });
+    }
+    return result;
+  }
+
+  async getInterviewRecords(ctx: EvidenceContext) {
+    if (this.repository.listInterviews) {
+      const items = await this.repository.listInterviews(ctx.ownerId);
+      return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取面试历史", data: { items } };
+    }
+    return this.service.getInterviewRecords(ctx);
+  }
 }

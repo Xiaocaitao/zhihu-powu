@@ -9,4 +9,7 @@ export interface EvidenceRepository {
   saveReview(review: Review): Promise<void>;
   saveInterview(interview: Interview): Promise<void>;
   getInterview(ownerId: string, interviewId: string): Promise<Interview | null>;
+  listInterviews?(ownerId: string): Promise<Pick<Interview, "interviewId" | "status" | "answeredCount" | "totalQuestions" | "target">[]>;
+  saveAnswer?(input: { answerId: string; ownerId: string; interviewId: string; questionId: string; text: string }): Promise<void>;
+  saveAnswerFeedback?(input: { answerId: string; ownerId: string; status: "succeeded" | "failed"; result?: unknown }): Promise<void>;
 }
