@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { ChatError, type ChatRequest, type ChatRuntime, type ChatStore, type ChatEvent, type Emit } from "./contracts.ts";
 
 export class ChatService {
@@ -19,7 +20,8 @@ export class ChatService {
       signal.throwIfAborted();
       if (JSON.stringify(run.history).length > 2_000_000) throw new ChatError("context_limit", 413);
       await send({ type: "session", session_id: run.sessionId, request_id: input.request_id });
-      const history = await this.runtime.run({ message: input.message, sessionId: run.sessionId, history: run.history, signal }, send);
+      const operationKey = randomUUID();
+      const history = await this.runtime.run({ message: input.message, sessionId: run.sessionId, history: run.history, signal, context: { ownerId: owner, sessionId: run.sessionId, requestId: input.request_id, operationKey } }, send);
       signal.throwIfAborted();
       await run.finish("completed", events, history);
     } catch (error) {

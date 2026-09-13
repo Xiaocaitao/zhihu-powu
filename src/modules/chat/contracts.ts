@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CapabilityContext } from "../../contracts/capability.ts";
 
 export const chatRequestSchema = z.object({
   message: z.string().min(1).max(32000).refine(value => value.trim().length > 0),
@@ -11,7 +12,7 @@ export type Emit = (event: ChatEvent) => Promise<void>;
 // Transcript is opaque infrastructure data; only the runtime interprets Pi messages.
 export type Transcript = object[];
 export interface ChatRuntime {
-  run(input: { message: string; sessionId: string; history: Transcript; signal: AbortSignal }, emit: Emit): Promise<Transcript>;
+  run(input: { message: string; sessionId: string; history: Transcript; signal: AbortSignal; context?: CapabilityContext }, emit: Emit): Promise<Transcript>;
 }
 export type RunStatus = "completed" | "failed" | "cancelled" | "interrupted";
 export type SavedRun = { request_id: string; message: string; status: string; events: ChatEvent[] };
