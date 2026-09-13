@@ -6,6 +6,35 @@ export class PostgresChatStore implements ChatStore {
   private pool: Pool;
   constructor(pool: Pool) { this.pool = pool; }
 
+  async create(owner: string) {
+    const sessionId = randomUUID();
+    const result = await this.pool.query<{ id: string; created_at: string }>(
+      "INSERT INTO chat_sessions (id, owner) VALUES ($1, $2) RETURNING id, created_at::text AS created_at",
+      [sessionId, owner],
+    );
+    return { sessionId: result.rows[0].id, createdAt: result.rows[0].created_at };
+  }
+
+  async list(owner: string) {
+    const result = await this.pool.query(
+      `SELECT s.id AS session_id, s.created_at::text AS created_at,
+              COUNT(r.request_id)::int AS message_count, first_run.message AS preview
+         FROM chat_sessions s
+         LEFT JOIN chat_runs r ON r.session_id = s.id
+         LEFT JOIN LATERAL (
+           SELECT message FROM chat_runs
+            WHERE session_id = s.id
+            ORDER BY created_at, request_id
+            LIMIT 1
+         ) first_run ON true
+        WHERE s.owner = $1
+        GROUP BY s.id, s.created_at, first_run.message
+        ORDER BY s.created_at DESC`,
+      [owner],
+    );
+    return result.rows;
+  }
+
   async begin(owner: string, input: ChatRequest) {
     const sessionId = input.session_id ?? randomUUID();
     const db = await this.pool.connect();

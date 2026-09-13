@@ -8,18 +8,80 @@ import { PostgresChatStore } from "./modules/chat/postgres-repository.ts";
 import { ChatService } from "./modules/chat/service.ts";
 import { chatRequestSchema, ChatError } from "./modules/chat/contracts.ts";
 import { PiChatRuntime } from "./agent/runtime/pi-chat-runtime.ts";
+import { createZhihuOAuth, type ZhihuOAuthProfile, type ZhihuOAuthProvider } from "./integrations/zhihu/oauth.ts";
 
-type Options = { chatService?: ChatService; readiness?: () => Promise<void>; routeService?: unknown };
+type Options = { chatService?: ChatService; readiness?: () => Promise<void>; routeService?: unknown; oauth?: ZhihuOAuthProvider };
 const owners = new Map<string, string>();
+type OAuthSession = { state?: string; stateVerified?: boolean; accessToken?: string; expiresAt?: number; profile?: ZhihuOAuthProfile; error?: { code: string; message: string } };
+const oauthSessions = new Map<string, OAuthSession>();
 export function createPowuServer(options: Options = {}): Server {
+  const oauth = options.oauth ?? createZhihuOAuth();
   return createServer(async (req, res) => {
     const path = (req.url ?? "/").split("?", 1)[0];
     if (path === "/healthz") return send(res, 200, { ok: true });
     if (path === "/readyz") { try { await options.readiness?.(); return send(res, 200, { ok: true }); } catch { return send(res, 503, { ok: false }); } }
     if (path === "/" && req.method === "GET") return serve(res, "../public/index.html", "text/html; charset=utf-8");
     if (path.startsWith("/assets/") && req.method === "GET") { const name = path.slice(8); if (!name || name.includes("..") || name.includes("\\")) return send(res, 404, { error: "not_found" }); const types: Record<string,string> = { ".js":"text/javascript; charset=utf-8", ".gif":"image/gif", ".jpg":"image/jpeg", ".png":"image/png" }; return serve(res, `../public/assets/${name}`, types[name.slice(name.lastIndexOf(".")).toLowerCase()] ?? "application/octet-stream"); }
+    if (path === "/api/auth/zhihu/status" && req.method === "GET") {
+      const session = oauthSession(req, res);
+      const authorized = Boolean(session.accessToken && session.expiresAt && session.expiresAt > Date.now() && session.profile);
+      return send(res, 200, { ok: true, authorized, profile: authorized ? session.profile : null, uid: authorized ? session.profile?.uid : null, state_verified: session.stateVerified ?? null, error: session.error ?? null });
+    }
+    if (path === "/auth/zhihu/start" && req.method === "GET") {
+      const session = oauthSession(req, res);
+      try {
+        const state = randomBytes(24).toString("base64url");
+        session.state = state;
+        session.stateVerified = undefined;
+        session.error = undefined;
+        return redirect(res, oauth.authorizationUrl(state), res.getHeader("set-cookie"));
+      } catch (error) {
+        session.error = oauthError(error);
+        return redirect(res, "/?oauth=error", res.getHeader("set-cookie"));
+      }
+    }
+    if (path === "/auth/zhihu/callback" && req.method === "GET") {
+      const session = oauthSession(req, res);
+      const query = new URL(req.url ?? "/", "http://localhost").searchParams;
+      const code = query.get("authorization_code") ?? query.get("code") ?? "";
+      const returnedState = query.get("state");
+      try {
+        if (session.state && returnedState && !sameSecret(session.state, returnedState)) throw new Error("OAuth state 校验失败，请重新登录。 ");
+        session.stateVerified = Boolean(session.state && returnedState);
+        const token = await oauth.exchangeCode(code);
+        const profile = await oauth.getUserInfo(token.accessToken);
+        session.accessToken = token.accessToken;
+        session.expiresAt = token.expiresAt;
+        session.profile = profile;
+        session.state = undefined;
+        session.error = undefined;
+        return redirect(res, "/?oauth=success", res.getHeader("set-cookie"));
+      } catch (error) {
+        session.accessToken = undefined;
+        session.expiresAt = undefined;
+        session.profile = undefined;
+        session.state = undefined;
+        session.error = oauthError(error);
+        return redirect(res, "/?oauth=error", res.getHeader("set-cookie"));
+      }
+    }
+    if (path === "/api/auth/zhihu/logout" && req.method === "POST") {
+      const session = oauthSession(req, res);
+      session.accessToken = undefined; session.expiresAt = undefined; session.profile = undefined; session.state = undefined; session.stateVerified = undefined; session.error = undefined;
+      return send(res, 200, { ok: true });
+    }
     if (path === "/api/routes" || path.startsWith("/api/routes/")) return send(res, 410, { ok: false, error: "route_api_retired", message: "请使用 /api/chat" });
     if (path === "/api/chat" && req.method === "POST") return chat(req, res);
+    if (path === "/api/sessions" && req.method === "POST") {
+      if (!options.chatService) return send(res, 503, { error: "chat_unavailable" });
+      try { const created = await options.chatService.createSession(ownerId(req, res)); return send(res, 201, { session_id: created.sessionId, created_at: created.createdAt }); }
+      catch (error) { console.error("session creation failed", error); return send(res, 502, { ok: false, error: "session_create_failed" }); }
+    }
+    if (path === "/api/sessions" && req.method === "GET") {
+      if (!options.chatService) return send(res, 503, { error: "chat_unavailable" });
+      try { return send(res, 200, { sessions: await options.chatService.listSessions(ownerId(req, res)) }); }
+      catch (error) { console.error("session listing failed", error); return send(res, 502, { ok: false, error: "session_list_failed" }); }
+    }
     const session = path.match(/^\/api\/sessions\/([0-9a-f-]+)$/i)?.[1];
     if (session && req.method === "GET") { if (!options.chatService) return send(res, 503, { error: "chat_unavailable" }); const runs = await options.chatService.get(ownerId(req, res), session); return send(res, runs ? 200 : 404, runs ?? { error: "not_found" }); }
     return send(res, 404, { ok: false, error: "not_found" });
@@ -34,6 +96,15 @@ export function createPowuServer(options: Options = {}): Server {
     }
   });
 }
+function oauthSession(req: IncomingMessage, res: ServerResponse) {
+  const owner = ownerId(req, res);
+  let session = oauthSessions.get(owner);
+  if (!session) { session = {}; oauthSessions.set(owner, session); }
+  return session;
+}
+function sameSecret(a: string, b: string) { return a.length === b.length && Buffer.from(a).equals(Buffer.from(b)); }
+function oauthError(error: unknown) { return { code: error instanceof Error && "code" in error ? String((error as { code?: unknown }).code) : "OAUTH_FAILED", message: error instanceof Error ? error.message : "知乎 OAuth 登录失败，请重试。" }; }
+function redirect(res: ServerResponse, location: string, cookie: string | string[] | number | undefined) { const headers: Record<string, string | string[]> = { location }; if (typeof cookie === "string" || Array.isArray(cookie)) headers["set-cookie"] = cookie; res.writeHead(302, headers); res.end(); }
 function ownerId(req: IncomingMessage, res: ServerResponse) {
   const token = req.headers.cookie?.match(/(?:^|; )(?:__Host-)?powu_owner=([^;]+)/)?.[1];
   if (token && owners.has(token)) return owners.get(token)!;

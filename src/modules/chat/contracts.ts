@@ -15,7 +15,10 @@ export interface ChatRuntime {
 }
 export type RunStatus = "completed" | "failed" | "cancelled" | "interrupted";
 export type SavedRun = { request_id: string; message: string; status: string; events: ChatEvent[] };
+export type SessionSummary = { session_id: string; created_at: string; message_count: number; preview: string | null };
 export interface ChatStore {
+  create(owner: string): Promise<{ sessionId: string; createdAt: string }>;
+  list(owner: string): Promise<SessionSummary[]>;
   begin(owner: string, input: ChatRequest): Promise<{
     sessionId: string; history: Transcript;
     finish(status: RunStatus, events: ChatEvent[], history?: Transcript): Promise<void>;

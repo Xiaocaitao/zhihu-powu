@@ -106,11 +106,14 @@ jobs:
           PI_BASE_URL: ${{ vars.PI_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3' }}
           PI_API_KEY: ${{ secrets.PI_API_KEY }}
           ZHIHU_ACCESS_SECRET: ${{ secrets.ZHIHU_ACCESS_SECRET }}
+          ZHIHU_OAUTH_APP_ID: ${{ vars.ZHIHU_OAUTH_APP_ID || '476' }}
+          ZHIHU_OAUTH_APP_KEY: ${{ secrets.ZHIHU_OAUTH_APP_KEY }}
+          ZHIHU_OAUTH_REDIRECT_URI: ${{ vars.ZHIHU_OAUTH_REDIRECT_URI }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
-          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,ACR_IMAGE,POSTGRES_IMAGE,CADDY_IMAGE,CADDYFILE_PATH,APP_PORT,DOMAIN,POSTGRES_PASSWORD,PI_PROVIDER,PI_MODEL,PI_BASE_URL,PI_API_KEY,ZHIHU_ACCESS_SECRET
+          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,ACR_IMAGE,POSTGRES_IMAGE,CADDY_IMAGE,CADDYFILE_PATH,APP_PORT,DOMAIN,POSTGRES_PASSWORD,PI_PROVIDER,PI_MODEL,PI_BASE_URL,PI_API_KEY,ZHIHU_ACCESS_SECRET,ZHIHU_OAUTH_APP_ID,ZHIHU_OAUTH_APP_KEY,ZHIHU_OAUTH_REDIRECT_URI
           script: |
             set -eu
             install -d -m 755 /opt/powu
@@ -132,7 +135,10 @@ jobs:
               "PI_MODEL=${PI_MODEL}" \
               "PI_BASE_URL=${PI_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}" \
               "PI_API_KEY=${PI_API_KEY}" \
-              "ZHIHU_ACCESS_SECRET=${ZHIHU_ACCESS_SECRET}" > /opt/powu/.env
+              "ZHIHU_ACCESS_SECRET=${ZHIHU_ACCESS_SECRET}" \
+              "ZHIHU_OAUTH_APP_ID=${ZHIHU_OAUTH_APP_ID}" \
+              "ZHIHU_OAUTH_APP_KEY=${ZHIHU_OAUTH_APP_KEY}" \
+              "ZHIHU_OAUTH_REDIRECT_URI=${ZHIHU_OAUTH_REDIRECT_URI}" > /opt/powu/.env
             printf '%s' "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" --username "$ACR_USERNAME" --password-stdin
             if docker compose version >/dev/null 2>&1; then
               compose() { docker compose "$@"; }

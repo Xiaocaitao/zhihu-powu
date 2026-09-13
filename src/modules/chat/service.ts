@@ -4,6 +4,9 @@ export class ChatService {
   private store: ChatStore; private runtime: ChatRuntime;
   constructor(store: ChatStore, runtime: ChatRuntime) { this.store = store; this.runtime = runtime; }
 
+  createSession(owner: string) { return this.store.create(owner); }
+  listSessions(owner: string) { return this.store.list(owner); }
+
   async chat(owner: string, input: ChatRequest, signal: AbortSignal, emit: Emit) {
     const run = await this.store.begin(owner, input);
     const events: ChatEvent[] = [];

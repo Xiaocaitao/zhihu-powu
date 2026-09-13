@@ -74,6 +74,8 @@ curl -N -X POST http://127.0.0.1:3000/api/chat \
 curl http://127.0.0.1:3000/api/sessions/<session_id>
 ```
 
+会话管理：`POST /api/sessions` 创建当前浏览器归属的新会话，`GET /api/sessions` 列出当前浏览器可见的会话摘要。两者都依赖服务端下发的 HttpOnly `powu_owner` cookie；不同浏览器会话之间不能互相读取。旧客户端不传 `session_id` 时，`POST /api/chat` 仍会按原行为自动创建会话。
+
 请求链路是：HTTP 校验协议 → 会话存储与同会话锁 → Pi runtime 自主循环（模型/工具/事件）→ 保存透明事件和 transcript；失败或取消保留明确状态。旧 /api/routes 返回 410，不删除历史数据。`/healthz` 用于存活检查，`/readyz` 用于数据库就绪检查。
 
 失败输出 `ok: false` 并使用非零退出码。不自动重试、不自动翻页、不自动轮询或下载结果文件。
@@ -132,7 +134,13 @@ OAuth 两个工具均使用空 JSON 参数：应用凭据、登记的回调地�
 
 可通过可信的 `onOAuthToken(credentials)` 回调写入后端安全存储。回调失败会报 `TOKEN_STORAGE_FAILED`，不能重放授权码。CLI 可使用 `.env.example` 中的 OAuth 环境变量联调，但换码后进程退出即丢失内存 token，**不代表完成持久化登录**；实际应用应在一个会话中换码和使用，或提供安全持久化回调。
 
-官方文档未定义 state/PKCE 回传、refresh/revoke 协议，也未给出其提到的“获取用户信息”的 endpoint。本项目不虚构这些接口、不实现可上线的 OAuth 登录回调。生产接入前必须与平台确认请求关联校验等安全方案；不能直接把收到的任意授权码当成当前登录用户的授权。
+### Web 登录回调
+
+当前 Web 服务提供最小 OAuth 登录闭环：`GET /auth/zhihu/start` → 知乎授权 → `GET /auth/zhihu/callback` → 服务端换取 token 并调用 `GET https://openapi.zhihu.com/user`。登录状态按现有 HttpOnly 会话 Cookie 保存在服务端内存中，前端只收到脱敏后的用户资料。
+
+回调地址必须在知乎项目中登记，并通过环境变量配置：`ZHIHU_OAUTH_APP_ID`、`ZHIHU_OAUTH_APP_KEY`、`ZHIHU_OAUTH_REDIRECT_URI`。App Key 只放部署平台 Secret，不要提交源码。`uid` 是 `/user` 响应中的用户字段，不是换码请求参数；服务端会把它转换为字符串，作为知乎用户的稳定标识（建议业务侧使用 `provider=zhihu + uid`，不要把 access_token 当用户 ID）。
+
+官方文档没有给出 refresh/revoke 协议；当前 MVP 令牌只保存在内存，服务重启后需要重新登录。回调若没有返回 `state`，服务会允许本次黑客松联调但在状态接口标记 `state_verified=false`；正式上线前应与平台确认并强制校验请求关联参数。
 
 ## 验证边界
 

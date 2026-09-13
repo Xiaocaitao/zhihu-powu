@@ -97,10 +97,13 @@ flowchart LR
 | Secret | `POSTGRES_PASSWORD` | PostgreSQL 密码，建议使用字母和数字 |
 | Secret | `PI_API_KEY` | Pi 使用的模型提供商 API Key |
 | Secret | `ZHIHU_ACCESS_SECRET` | 知乎开放平台 Access Secret |
+| Secret | `ZHIHU_OAUTH_APP_KEY` | 知乎黑客松 OAuth App Key |
 | Variable | `PI_PROVIDER` | 默认 `doubao` |
 | Variable | `PI_MODEL` | 火山方舟控制台创建的 Endpoint ID，必填 |
 | Variable | `PI_BASE_URL` | 默认 `https://ark.cn-beijing.volces.com/api/v3` |
 | Variable | `APP_DOMAIN` | Caddy 使用的公网域名，例如 `powu.example.com`，必填 |
+| Variable | `ZHIHU_OAUTH_APP_ID` | 默认 `476`，知乎黑客松 OAuth App ID |
+| Variable | `ZHIHU_OAUTH_REDIRECT_URI` | 必须与知乎登记一致，例如 `https://<APP_DOMAIN>/auth/zhihu/callback` |
 
 `POSTGRES_PASSWORD`、`PI_API_KEY` 和 `ZHIHU_ACCESS_SECRET` 只会由 Actions 写入 ECS 的 `/opt/powu/.env`，该文件权限为 `0600`，不会进入 Git 或 Docker 镜像。队员不需要这些密钥，也不需要 ECS 权限。
 
