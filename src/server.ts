@@ -47,6 +47,31 @@ export function createPowuServer(options: PowuServerOptions = {}): Server {
       return;
     }
 
+    if (path.startsWith("/assets/") && request.method === "GET") {
+      const assetName = path.slice("/assets/".length);
+      if (!assetName || assetName.includes("..") || assetName.includes("\\")) {
+        sendJson(response, 404, { ok: false, error: "not_found" });
+        return;
+      }
+      try {
+        const asset = await readFile(new URL(`../public/assets/${assetName}`, import.meta.url));
+        const contentTypes: Record<string, string> = {
+          ".gif": "image/gif",
+          ".jpg": "image/jpeg",
+          ".jpeg": "image/jpeg",
+          ".png": "image/png",
+          ".js": "text/javascript; charset=utf-8",
+        };
+        const extension = assetName.slice(assetName.lastIndexOf(".")).toLowerCase();
+        response.setHeader("content-type", contentTypes[extension] ?? "application/octet-stream");
+        response.statusCode = 200;
+        response.end(asset);
+      } catch {
+        sendJson(response, 404, { ok: false, error: "not_found" });
+      }
+      return;
+    }
+
     const asset = path.match(/^\/assets\/(kanshan-front\.jpg|idle\.gif|wander\.gif)$/)?.[1];
     if (asset && request.method === "GET") {
       try {

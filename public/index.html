@@ -102,25 +102,13 @@
     <aside class="sidebar">
       <div class="brand-row">
         <div class="brand"><div class="logo">知</div><div>看山助手<small>Zhihu AI Workspace</small></div></div>
-        <button class="icon-btn" title="收起侧栏">☰</button>
-      </div>
-      <button class="new-chat" id="newChat"><span>＋</span><span>新建对话</span></button>
-      <div class="section-title">最近对话</div>
-      <div class="chat-list" id="chatList">
-        <button class="chat active"><span class="dot"></span><span class="label">后端开发学习路线</span><time>刚刚</time></button>
-        <button class="chat"><span class="dot"></span><span class="label">Docker 部署问题排查</span><time>昨天</time></button>
-        <button class="chat"><span class="dot"></span><span class="label">知乎内容运营计划</span><time>周二</time></button>
-        <button class="chat"><span class="dot"></span><span class="label">TypeScript 入门笔记</span><time>周一</time></button>
       </div>
       <div class="sidebar-spacer"></div>
-      <div class="profile"><div class="avatar">LL</div><div><strong>刘同学</strong><span>个人空间 · 设置</span></div><button class="icon-btn" style="margin-left:auto">···</button></div>
     </aside>
     <main class="main">
       <header class="topbar"><div class="crumb"><strong>后端开发学习路线</strong><span>·</span><span>看山助手</span><span class="badge">Beta</span></div></header>
       <section class="content" id="content">
         <div class="welcome"><img class="welcome-mark" src="assets/kanshan-front.jpg" alt="看山"/><div><p class="eyebrow">HELLO, 看山</p><h1>把一个模糊目标，<br/>变成一条可执行的路。</h1><p class="intro">告诉我你想去哪里、现在在哪里，以及每周有多少时间。我会和你一起拆解问题，给出清晰、可落地的下一步。</p></div></div>
-        <div class="message user"><div class="bubble">我想系统学习后端开发，希望半年内能独立完成一个小型项目。每周大概有 10 小时。</div><div class="mini-avatar">我</div></div>
-        <div class="message"><div class="mini-avatar"><img src="assets/idle.gif" alt="看山"/></div><div class="bubble"><p>目标很清楚，我们可以把半年拆成 4 个阶段。先从一条主线开始：<strong>语言基础 → Web 框架 → 数据库与部署 → 完成项目</strong>。</p><p>我建议第一周先建立开发环境，并用一个最小 API 把请求、业务逻辑和数据库串起来。</p><div class="checklist"><span>本周：完成环境搭建</span><span>下周：实现第一个 API</span><span>第 1 月：掌握工程结构</span><span>第 2 月：完成实战项目</span></div></div></div>
       </section>
       <img class="mascot" src="assets/wander.gif" alt="刘看山"/>
       <div class="composer-wrap"><div class="composer"><button class="tool" title="添加附件">＋</button><textarea id="input" rows="1" placeholder="输入消息，开始和看山对话…"></textarea><div class="compose-tools"><button class="tool" title="语音输入">♩</button><button class="send" id="send" title="发送">↑</button></div></div><div class="hint">看山可能会犯错，请核对重要信息 · 内容仅供学习交流</div></div>
@@ -135,8 +123,6 @@
       const escaped = String(value ?? '').replace(/[&<>\"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[character]));
       return marked.parse(escaped, { breaks: true, gfm: true });
     }
-    document.querySelectorAll('.chat').forEach(item => item.addEventListener('click', () => { document.querySelectorAll('.chat').forEach(c => c.classList.remove('active')); item.classList.add('active'); showToast('已切换到「' + item.querySelector('.label').textContent + '」'); }));
-    document.querySelector('#newChat').addEventListener('click', () => { document.querySelectorAll('.chat').forEach(c => c.classList.remove('active')); showToast('已创建新对话'); document.querySelector('#input').focus(); });
     document.querySelector('#send').addEventListener('click', submitRoute);
     document.querySelector('#input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.querySelector('#send').click(); } });
 
