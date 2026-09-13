@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,7 +24,6 @@ import { EvidenceApplication } from "./modules/evidence/application.ts";
 import { EvidenceService } from "./modules/evidence/service.ts";
 
 type Options = { chatService?: ChatService; knowledgeStore?: KnowledgeStore; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider; capabilityRegistry?: CapabilityRegistry; promptContext?: PromptContext };
-const owners = new Map<string, string>();
 type OAuthSession = { state?: string; stateVerified?: boolean; accessToken?: string; expiresAt?: number; profile?: ZhihuOAuthProfile; error?: { code: string; message: string } };
 const oauthSessions = new Map<string, OAuthSession>();
 export function createPowuServer(options: Options = {}): Server {
@@ -192,10 +191,12 @@ function oauthError(error: unknown) { return { code: error instanceof Error && "
 function redirect(res: ServerResponse, location: string, cookie: string | string[] | number | undefined) { const headers: Record<string, string | string[]> = { location }; if (typeof cookie === "string" || Array.isArray(cookie)) headers["set-cookie"] = cookie; res.writeHead(302, headers); res.end(); }
 function cookieOwner(req: IncomingMessage, res: ServerResponse) {
   const token = req.headers.cookie?.match(/(?:^|; )(?:__Host-)?powu_owner=([^;]+)/)?.[1];
-  if (token && owners.has(token)) return owners.get(token)!;
-  const key = randomBytes(32).toString("base64url");
-  const owner = randomBytes(24).toString("base64url");
-  owners.set(key, owner);
+  // The cookie must resolve to the same owner after an ECS restart. An
+  // in-memory token -> random-owner map made every restart look like a new
+  // user, hiding existing profile and chat data. Hash the bearer token so the
+  // database never stores the raw cookie while keeping the mapping stable.
+  const key = token ?? randomBytes(32).toString("base64url");
+  const owner = `anonymous:${createHash("sha256").update(key).digest("hex")}`;
   const secure = process.env.COOKIE_SECURE === "true" || (process.env.NODE_ENV === "production" && process.env.COOKIE_SECURE !== "false");
   const name = secure ? "__Host-powu_owner" : "powu_owner";
   res.setHeader("set-cookie", `${name}=${key}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secure ? "; Secure" : ""}`);

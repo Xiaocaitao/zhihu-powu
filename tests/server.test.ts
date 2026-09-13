@@ -46,6 +46,19 @@ test("session endpoints isolate sessions by owner cookie", async t => {
   const hidden = await fetch(`http://127.0.0.1:${address.port}/api/sessions/00000000-0000-4000-8000-000000000010`); assert.equal(hidden.status, 404);
 });
 
+test("anonymous cookie keeps the same owner after a server restart", async t => {
+  const sessions = new Map<string, Array<{ session_id: string; created_at: string; message_count: number; preview: string | null }>>();
+  const store: ChatStore = {
+    async create(owner) { const session = { session_id: "00000000-0000-4000-8000-000000000011", created_at: new Date().toISOString(), message_count: 0, preview: null }; sessions.set(owner, [session]); return { sessionId: session.session_id, createdAt: session.created_at }; },
+    async list(owner) { return sessions.get(owner) ?? []; },
+    async begin() { throw new Error("unused"); },
+    async get() { return null; },
+  };
+  const open = async () => { const server = createPowuServer({ chatService: new ChatService(store, { run: async () => [] }) }); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string"); return { server, base: `http://127.0.0.1:${address.port}` }; };
+  const first = await open(); const created = await fetch(`${first.base}/api/sessions`, { method: "POST" }); const cookie = created.headers.get("set-cookie")?.split(";", 1)[0]; assert.ok(cookie); await new Promise<void>(resolve => first.server.close(() => resolve()));
+  const second = await open(); t.after(() => second.server.close()); const listed = await fetch(`${second.base}/api/sessions`, { headers: { cookie } }); assert.equal((await listed.json()).sessions.length, 1);
+});
+
 test("authenticated sessions use the Zhihu uid instead of the anonymous cookie owner", async t => {
   const sessions = new Map<string, Array<{ session_id: string; created_at: string; message_count: number; preview: string | null }>>();
   let nextId = 20;
