@@ -54,7 +54,7 @@ export class PiRouteAgent implements RouteAgent {
     this.baseUrl = options.baseUrl ?? process.env.PI_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3";
   }
 
-  async generate(input: RouteRequest, signal?: AbortSignal, onProgress?: (event: RouteProgress) => void): Promise<RoutePlan> {
+  async generate(input: RouteRequest, signal?: AbortSignal, onProgress?: (event: RouteProgress) => void, onDelta?: (delta: string) => void): Promise<RoutePlan> {
     if (!this.apiKey) throw new Error("PI_API_KEY is required");
     const runtime = this.resolveRuntime();
     const agent = new Agent({
@@ -70,6 +70,8 @@ export class PiRouteAgent implements RouteAgent {
     const unsubscribe = agent.subscribe(event => {
       if (event.type === "agent_start") {
         onProgress?.({ stage: "agent_started", message: "Pi Agent 已启动" });
+      } else if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+        onDelta?.(event.assistantMessageEvent.delta);
       } else if (event.type === "tool_execution_start" && event.toolName === "search_zhihu") {
         onProgress?.({ stage: "searching", message: "正在搜索知乎真实经验" });
       } else if (event.type === "tool_execution_end" && event.toolName === "search_zhihu") {

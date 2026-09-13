@@ -110,7 +110,7 @@ export function createPowuServer(options: PowuServerOptions = {}): Server {
         try {
           const record = await options.routeService.create(body, controller.signal, event => {
             writeSse(response, "progress", event);
-          });
+          }, delta => writeSse(response, "delta", { delta }));
           writeSse(response, "complete", record);
         } finally {
           stopHeartbeat();

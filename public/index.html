@@ -137,6 +137,8 @@
       input.value = '';
       send.disabled = true;
       const log = appendProgressMessage();
+      const streamBubble = appendMessage('assistant', '');
+      streamBubble.classList.add('markdown', 'streaming');
       appendLogLine(log, '正在提交请求');
       try {
         const response = await fetch('/api/routes', {
@@ -149,7 +151,11 @@
           const details = error.issues?.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('；');
           throw new Error(details || error.error || '请求失败，请稍后重试');
         }
-        const record = await readRouteStream(response, log);
+        const record = await readRouteStream(response, log, delta => {
+          streamBubble.dataset.raw = (streamBubble.dataset.raw || '') + delta;
+          streamBubble.innerHTML = markdown(streamBubble.dataset.raw);
+        });
+        streamBubble.parentElement.remove();
         appendRouteMessage(record);
       } catch (error) {
         appendLogLine(log, error instanceof Error ? error.message : '生成失败', true);
@@ -203,7 +209,7 @@
       log.parentElement.parentElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
 
-    async function readRouteStream(response, log) {
+    async function readRouteStream(response, log, onDelta) {
       if (!response.body) throw new Error('浏览器不支持 SSE 流式响应');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -219,6 +225,7 @@
           const event = parseSseBlock(block);
           if (!event) continue;
           if (event.name === 'progress') appendLogLine(log, event.data.message || '处理中');
+          if (event.name === 'delta') onDelta?.(event.data.delta || '');
           if (event.name === 'complete') { record = event.data; appendLogLine(log, '完成，路线已保存', false); log.lastElementChild.classList.add('done'); }
           if (event.name === 'error') throw new Error(event.data.error || '路线生成失败');
         }
@@ -226,6 +233,7 @@
       }
       if (buffer.trim()) {
         const event = parseSseBlock(buffer);
+        if (event?.name === 'delta') onDelta?.(event.data.delta || '');
         if (event?.name === 'complete') record = event.data;
         if (event?.name === 'error') throw new Error(event.data.error || '路线生成失败');
       }

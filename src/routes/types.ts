@@ -54,8 +54,10 @@ export type RouteProgress = {
   message: string;
 };
 
+export type RouteDelta = string;
+
 export interface RouteAgent {
-  generate(input: RouteRequest, signal?: AbortSignal, onProgress?: (event: RouteProgress) => void): Promise<RoutePlan>;
+  generate(input: RouteRequest, signal?: AbortSignal, onProgress?: (event: RouteProgress) => void, onDelta?: (delta: RouteDelta) => void): Promise<RoutePlan>;
 }
 
 export interface RouteRepository {
