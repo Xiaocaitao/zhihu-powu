@@ -10,8 +10,10 @@ import { chatRequestSchema, ChatError } from "./modules/chat/contracts.ts";
 import { PiChatRuntime } from "./agent/runtime/pi-chat-runtime.ts";
 import { createZhihuOAuth, type ZhihuOAuthProfile, type ZhihuOAuthProvider } from "./integrations/zhihu/oauth.ts";
 import { matchApplicationRoute, type ApplicationRoute } from "./http/routes.ts";
+import type { CapabilityRegistry } from "./agent/tools/registry.ts";
+import type { PromptContext } from "./agent/prompts/system.ts";
 
-type Options = { chatService?: ChatService; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider };
+type Options = { chatService?: ChatService; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider; capabilityRegistry?: CapabilityRegistry; promptContext?: PromptContext };
 const owners = new Map<string, string>();
 type OAuthSession = { state?: string; stateVerified?: boolean; accessToken?: string; expiresAt?: number; profile?: ZhihuOAuthProfile; error?: { code: string; message: string } };
 const oauthSessions = new Map<string, OAuthSession>();
@@ -146,5 +148,5 @@ function cookieOwner(req: IncomingMessage, res: ServerResponse) {
 async function serve(res: ServerResponse, relative: string, type: string) { try { res.writeHead(200, { "content-type": type }); res.end(await readFile(new URL(relative, import.meta.url))); } catch { send(res, 404, { error: "not_found" }); } }
 function send(res: ServerResponse, status: number, body: unknown) { if (!res.headersSent) res.writeHead(status, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); }
 async function readBody(req: IncomingMessage) { const chunks: Buffer[] = []; let size = 0; for await (const c of req) { const b = Buffer.from(c); size += b.length; if (size > 128 * 1024) throw new ChatError("body_too_large", 413); chunks.push(b); } if (!chunks.length) throw new ChatError("body_required", 400); return JSON.parse(Buffer.concat(chunks).toString()); }
-export async function startPowuServer(): Promise<Server> { const pool = createPool(); await ensureSchema(pool); const service = new ChatService(new PostgresChatStore(pool), new PiChatRuntime()); const server = createPowuServer({ chatService: service, readiness: async () => { await pool.query("SELECT 1"); } }); server.once("close", () => void pool.end()); await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); }); }); return server; }
+export async function startPowuServer(options: Options = {}): Promise<Server> { const pool = createPool(); await ensureSchema(pool); const service = options.chatService ?? new ChatService(new PostgresChatStore(pool), new PiChatRuntime({ capabilityRegistry: options.capabilityRegistry, promptContext: options.promptContext })); const server = createPowuServer({ ...options, chatService: service, readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }) }); server.once("close", () => void pool.end()); await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); }); }); return server; }
 if (process.argv[1] === fileURLToPath(import.meta.url)) startPowuServer().catch(error => { console.error(error); process.exitCode = 1; });
