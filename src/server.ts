@@ -113,6 +113,18 @@ export function createPowuServer(options: Options = {}): Server {
         return send(res, 200, { ok: true, profile: profileResult.data, completion: completionResult.data });
       } catch (error) { console.error("profile read failed", error); return send(res, 502, { ok: false, error: "profile_read_failed" }); }
     }
+    if (path === "/api/growth/career" && req.method === "GET") {
+      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "career_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      const plan = options.capabilityRegistry.list().find(capability => capability.name === "get_career_plan");
+      const jobs = options.capabilityRegistry.list().find(capability => capability.name === "get_target_jobs");
+      if (!plan || !jobs) return send(res, 503, { ok: false, error: "career_unavailable" });
+      try {
+        const [planResult, jobsResult] = await Promise.all([plan.execute(context, {}), jobs.execute(context, { limit: 50 })]);
+        if (!planResult.ok || !jobsResult.ok) return send(res, 502, { ok: false, error: "career_read_failed" });
+        return send(res, 200, { ok: true, plan: planResult.data ?? null, jobs: (jobsResult.data as { items?: unknown[] } | undefined)?.items ?? [] });
+      } catch (error) { console.error("career read failed", error); return send(res, 502, { ok: false, error: "career_read_failed" }); }
+    }
     const knowledgeFile = path.match(/^\/api\/knowledge\/files\/([0-9a-f-]+)$/i)?.[1];
     if (knowledgeFile && req.method === "GET") {
       if (!options.knowledgeStore) return send(res, 503, { error: "knowledge_unavailable" });
