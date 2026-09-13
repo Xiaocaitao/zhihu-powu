@@ -46,7 +46,7 @@ npm test
 
 ## 通用聊天
 
-启动服务前，在 `.env` 中配置 `DATABASE_URL`、`PI_PROVIDER`、火山方舟 Endpoint ID（`PI_MODEL`）、`PI_API_KEY` 和可选的 `PI_BASE_URL`。服务启动时会自动创建所需的两张 PostgreSQL 表。
+启动服务前，在 `.env` 中配置 `DATABASE_URL`、`PI_PROVIDER`、火山方舟 Endpoint ID（`PI_MODEL`）、`PI_API_KEY` 和可选的 `PI_BASE_URL`。服务启动时会幂等创建旧路线表和聊天会话表。
 
 ```bash
 npm start
@@ -100,8 +100,8 @@ SDK 上传还必须配置 `allowedUploadFiles`，精确到已获授权的单个�
 ## 服务端接入
 
 ```ts
-import { ZhihuClient } from "./src/zhihu/client.ts";
-import { createZhihuTools } from "./src/agent/tools.ts";
+import { ZhihuClient } from "./src/integrations/zhihu/client.ts";
+import { createZhihuTools } from "./src/agent/tools/zhihu.ts";
 
 // 每个用户会话独立实例，同一会话内复用。
 const client = new ZhihuClient();
@@ -110,7 +110,7 @@ const search = tools.find(tool => tool.name === "search_zhihu")!;
 const result = await search.execute({ query: "AI 应用开发 学习路线", count: 3 });
 ```
 
-工具提供 `name`、`description`、`inputSchema`、`method`、`endpoint`、`documentation`、`requiresConfirmation`、`annotations` 和 `execute(input, context?)`。这是普通业务工具契约，不是可直接注册的 Pi Tool/MCP Server；需要按宿主 SDK 添加适配。
+工具提供 `name`、`description`、`inputSchema`、`method`、`endpoint`、`documentation`、`requiresConfirmation`、`annotations` 和 `execute(input, context?)`。`src/agent/tools/pi-adapter.ts` 将它们转换为 Pi Tool；模型只能看到可信宿主授权的工具。
 
 - 成功：`{ ok: true, data, meta: { fetched_at, cached, idempotent_replayed? } }`。
 - 失败：`{ ok: false, error: { code, message, http_status?, api_code? } }`，不回显原始请求、响应及底层异常中的密钥。

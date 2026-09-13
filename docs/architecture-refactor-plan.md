@@ -13,15 +13,30 @@ public/ 展示与 SSE 解析
        -> src/integrations/zhihu/ 现有外部 API
 ```
 
-app 负责配置和组装；server.ts 仅启动。runtime 不依赖 HTTP/数据库，chat 模块不解析业务 JSON，前端不导入服务端内部模块。
+当前由 `server.ts` 负责配置和组装；后续规模扩大时再抽出 `app/`。runtime 不依赖 HTTP/数据库，chat 模块不解析业务 JSON，前端不导入服务端内部模块。
+
+当前目录对应关系：
+
+```text
+src/server.ts                         HTTP 路由、SSE、启动组装
+src/modules/chat/                     聊天协议、用例、PostgreSQL 会话存储
+src/agent/runtime/                    Pi Agent、provider 和流式事件
+src/agent/prompts/                    人格提示词与可信上下文注入
+src/agent/tools/                      Tool 适配器与能力白名单
+src/integrations/zhihu/               知乎 HTTP 客户端和响应协议
+src/db/                               连接池、开发建表和迁移文件
+public/                               单页聊天界面、SSE 解析、Markdown 展示
+```
+
+后续新增代码按这条依赖方向落位：`server -> modules/chat -> agent/runtime -> integrations`；数据库实现只由 `modules/chat` 的 port 使用，runtime 不反向调用 HTTP 或 SQL。
 
 ## 本次需求落点
 | 需求 | 文件/目录 | 验证 |
 |---|---|---|
-| 原文透传、通用流式输出 | interfaces/http/router.ts、modules/chat/contracts.ts | 问候与任意文本保持不变；分片早于 complete |
+| 原文透传、通用流式输出 | src/server.ts、src/modules/chat/contracts.ts | 问候与任意文本保持不变；分片早于 complete |
 | Pi 自主业务决策 | agent/runtime/pi-chat-runtime.ts、agent/prompts/system.ts | 不强制搜索、没有 RoutePlan；工具循环/多轮 |
-| 基础设施 | modules/chat/service.ts、postgres-repository.ts、db/migrations | 会话隔离、并发冲突、失败/取消状态 |
-| 数据展示 | public/index.html、assets/chat.js、assets/sse.js | Markdown 清洗、流式更新、滚动、不混合思考/正文 |
+| 基础设施 | src/modules/chat/service.ts、postgres-repository.ts、src/db/migrations | 会话隔离、并发冲突、失败/取消状态 |
+| 数据展示 | public/index.html、public/assets/marked.umd.js | Markdown 清洗、流式更新、滚动、不混合思考/正文 |
 | 配置发布 | app/、Dockerfile、deploy/ | 类型、测试、前后端同镜像 |
 
 ## HTTP 契约
