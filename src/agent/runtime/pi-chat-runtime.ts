@@ -48,10 +48,10 @@ export class PiChatRuntime implements ChatRuntime {
     const agent = new Agent({
       streamFn: async (model, context, options) => {
         const models = createDoubaoModels(model.id, this.baseUrl);
-        return models.streamSimple(model, context, { ...options, cacheRetention: "none", reasoning: "high", maxRetries: 1, maxRetryDelayMs: 3000 });
+        return models.streamSimple(model, context, { ...options, cacheRetention: "none", reasoning: "low", maxRetries: 1, maxRetryDelayMs: 3000 });
       },
       getApiKey: () => this.apiKey,
-      initialState: { systemPrompt, model: this.model, thinkingLevel: "high", messages: input.history as AgentMessage[], tools: [
+      initialState: { systemPrompt, model: this.model, thinkingLevel: "low", messages: input.history as AgentMessage[], tools: [
         ...adaptTools(createZhihuTools(this.client)),
         ...(input.context && this.capabilityRegistry ? adaptDomainCapabilities(this.capabilityRegistry.forContext(input.context), input.context) : []),
       ] },
@@ -65,7 +65,8 @@ export class PiChatRuntime implements ChatRuntime {
       if (event.type === "message_update") {
         const part = event.assistantMessageEvent;
         if (part.type === "text_delta") await emit({ type: "text_delta", delta: part.delta });
-        if (part.type === "thinking_delta") await emit({ type: "thinking_delta", delta: part.delta });
+        // Do not expose model chain-of-thought through the business chat SSE.
+        // The UI keeps its generic "正在思考" indicator until a text/tool event arrives.
       } else if (event.type === "tool_execution_start") await emit({ type: "tool_start", tool_call_id: event.toolCallId, tool_name: event.toolName, args: event.args });
       else if (event.type === "tool_execution_update") await emit({ type: "tool_update", tool_call_id: event.toolCallId, tool_name: event.toolName, update: event.partialResult });
       else if (event.type === "tool_execution_end") await emit({ type: "tool_end", tool_call_id: event.toolCallId, tool_name: event.toolName, error: event.isError });
