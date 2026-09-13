@@ -61,6 +61,9 @@ flowchart LR
 - 队员只需要 GitHub Write 权限，不需要 ECS、ACR 或 SSH 权限。
 - ECS 的 SSH 私钥只保存在 GitHub Actions Secrets 中，由 Deploy Action 使用。
 - Caddy 负责公网 HTTPS、证书自动续期和 HTTP 到 HTTPS 重定向；Node 只绑定 ECS 本机的 `127.0.0.1:3000`。
+- 如果 ECS 使用 Ubuntu Snap 版 Docker，部署脚本会把 `Caddyfile` 复制到
+  `/var/snap/docker/common/powu/Caddyfile` 后再挂载；这是因为该 Docker
+  守护进程不能直接 bind mount `/opt/powu` 下的文件。
 
 工作流文件是 `.github/workflows/deploy.yml`。它只在 `main` push 或手动触发，并且只有仓库变量 `DEPLOY_ENABLED` 为 `true` 时才会真正部署。
 

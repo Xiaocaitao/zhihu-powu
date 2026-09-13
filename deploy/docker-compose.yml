@@ -53,7 +53,10 @@ services:
       - "0.0.0.0:80:80"
       - "0.0.0.0:443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Docker installed from the Ubuntu Snap cannot bind-mount /opt paths.
+      # ECS deployment sets CADDYFILE_PATH to a path inside Docker's Snap data
+      # directory; local runs keep using the checked-in Caddyfile.
+      - ${CADDYFILE_PATH:-./Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
 
