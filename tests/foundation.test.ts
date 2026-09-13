@@ -40,3 +40,9 @@ test("growth prompt maps an explicit skills write to learned_content profile fac
   assert.match(prompt, /value 使用 \{ items: string\[\] \}/);
   assert.match(prompt, /不要把单纯的技能清单或自我描述改走 Evidence 的 record_learning_evidence/);
 });
+
+test("growth prompt keeps first learning plans in trial mode", async () => {
+  const prompt = await buildPrompt({ message: "生成学习计划", sessionId: "session-1" });
+  assert.match(prompt, /首次生成.*mode=trial/);
+  assert.match(prompt, /不要把 final draft 当成可确认计划/);
+});

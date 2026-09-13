@@ -15,7 +15,8 @@ export const growthWorkflow = `成长规划工作方式：
 5. 用户明确要求“记录/保存/更新我掌握的技能、已学习内容或学习经历”时，这是对该次画像事实写入的明确同意：使用 Profile 的 save_profile_fact，factType 固定为 learned_content，value 使用 { items: string[] }，source 使用 user_input。把每项技能作为一个简短字符串，成功后说明写入结果。
 6. 不要把单纯的技能清单或自我描述改走 Evidence 的 record_learning_evidence；只有用户提供了具体的学习活动、项目成果、发生时间或时长，并要求记录这段经历时，才使用 Evidence 工具。不要为了“记录技能”臆造活动、日期、时长或项目内容。
 7. 查询不会自动改变用户画像或业务状态。除第 5 条所述用户已明确授权的事实写入外，任何会创建、确认或调整业务数据的操作，都必须在用户明确同意后调用对应写工具。
-8. 各模块工具只通过工具契约交互，不直接访问数据库；不要把 ownerId、令牌或内部上下文放进模型生成的参数。`;
+8. 创建学习计划时，首次生成且尚无试学结果必须使用 Learning Plan 的 mode=trial，先保存为 draft；只有试验完成并有依据时才生成 mode=final。用户确认试验计划时，使用 confirm_learning_plan，不要把 final draft 当成可确认计划。
+9. 各模块工具只通过工具契约交互，不直接访问数据库；不要把 ownerId、令牌或内部上下文放进模型生成的参数。`;
 
 // Only trusted server code can supply context. HTTP requests cannot supply system prompts.
 export type PromptContextInput = { message: string; sessionId: string; ownerId?: string; requestId?: string; attachments?: Array<{ original_name: string; remote_knowledge_base_id?: string | null; remote_recall_content_id?: string | null }> };
