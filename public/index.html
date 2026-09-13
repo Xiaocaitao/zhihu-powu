@@ -133,6 +133,11 @@
       const goal = input.value.trim();
       if (!goal) { showToast('先写点什么吧'); input.focus(); return; }
       if (goal.length > 1000) { showToast('请将目标描述控制在 1000 字以内'); return; }
+      if (/^(你好|您好|嗨|hello|hi|在吗)[！!。.?？\s]*$/i.test(goal)) {
+        appendMessage('assistant', '你好，我是看山助手。你可以告诉我想解决的问题、当前情况和目标，我会帮你一起拆解。');
+        input.value = '';
+        return;
+      }
       appendMessage('user', goal);
       input.value = '';
       send.disabled = true;
@@ -145,7 +150,7 @@
         const response = await fetch('/api/routes', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ goal, profile: { weekly_hours: 10 } }),
+          body: JSON.stringify({ goal }),
         });
         if (!response.ok) {
           const error = await response.json().catch(() => ({}));
