@@ -12,5 +12,9 @@ test("业务 Zod schema 在 Agent 边界转换为 JSON Schema", () => {
   const schema = tool.parameters as Record<string, unknown>;
   assert.equal(schema.type, "object");
   assert.deepEqual(Object.keys(schema.properties as object).sort(), ["evidenceRef", "expectedVersion", "factType", "isConfirmed", "source", "value"]);
+  const value = (schema.properties as Record<string, any>).value;
+  assert.ok(Array.isArray(value.anyOf));
+  assert.ok(value.anyOf.some((item: any) => item.properties?.text?.minLength === 1));
+  assert.ok(value.anyOf.some((item: any) => item.properties?.items?.type === "array"));
   assert.equal("_def" in schema, false);
 });
