@@ -45,12 +45,12 @@
     .avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; background: #25496e; font-size: 12px; font-weight: 700; }
     .profile strong { display: block; font-size: 12px; }
     .profile span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
-    .main { position: relative; display: flex; flex-direction: column; min-width: 0; background: radial-gradient(circle at 85% 8%, #f5faff 0, transparent 34%), #fff; }
+    .main { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: radial-gradient(circle at 85% 8%, #f5faff 0, transparent 34%), #fff; }
     .topbar { display: flex; align-items: center; justify-content: space-between; height: 62px; padding: 0 34px; border-bottom: 1px solid rgba(231,237,245,.8); }
     .crumb { display: flex; align-items: center; gap: 9px; font-size: 13px; color: #9aa8ba; }
     .crumb strong { color: var(--ink); font-size: 14px; }
     .crumb .badge { padding: 4px 8px; border-radius: 99px; color: #2673cf; background: #eaf3ff; font-size: 11px; font-weight: 650; }
-    .content { width: min(900px, calc(100% - 80px)); flex: 1; margin: 0 auto; padding: 50px 0 170px; overflow: auto; }
+    .content { width: min(900px, calc(100% - 80px)); min-height: 0; flex: 1; margin: 0 auto; padding: 50px 0 170px; overflow-y: auto; overflow-x: hidden; }
     .welcome { display: flex; align-items: flex-start; gap: 15px; margin-bottom: 40px; }
     .welcome-mark { width: 42px; height: 42px; object-fit: contain; margin-top: 2px; }
     .eyebrow { margin: 0 0 8px; color: var(--blue); font-size: 11px; font-weight: 750; letter-spacing: .12em; }
