@@ -16,3 +16,6 @@ node --test --experimental-strip-types src/modules/profile/tests/profile.test.ts
 ```
 
 结果：5 项测试通过。
+
+- Service 写入校验测评来源证据引用、文本/列表非空和每周时间范围。
+- 当前单元测试共 7 项通过。

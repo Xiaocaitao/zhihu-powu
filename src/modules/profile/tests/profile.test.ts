@@ -16,3 +16,6 @@ test('版本冲突会拒绝过期写入', async()=>{const {service}=setup(); con
 
 test('四个 Agent Tool 均委托 Service', async()=>{const calls:string[]=[]; const fake:any={getUserProfile:async()=>{calls.push('get_user_profile');return null},getProfileCompletion:async()=>{calls.push('get_profile_completion');return {}},saveProfileFact:async()=>{calls.push('save_profile_fact');return {}},updateUserGoal:async()=>{calls.push('update_user_goal');return {}}}; const tools=createProfileCapabilities(fake); for(const tool of tools) await tool.execute({ownerId:'u1'},tool.name==='update_user_goal'?{direction:'后端'}:tool.name==='save_profile_fact'?{factType:'major',value:{text:'CS'},source:'user_input'}:{}); assert.deepEqual(calls,['get_user_profile','get_profile_completion','save_profile_fact','update_user_goal']);});
 
+
+test('校验测评来源必须带证据引用', async()=>{const {service}=setup(); await assert.rejects(()=>service.saveProfileFact({ownerId:'u1'},{factType:'major',value:{text:'CS'},source:'assessment'}),/INVALID_ARGUMENT/);});
+test('每周时间不允许为负数', async()=>{const {service}=setup(); await assert.rejects(()=>service.saveProfileFact({ownerId:'u1'},{factType:'weekly_time',value:{hours:-1},source:'user_input'}),/INVALID_ARGUMENT/);});
