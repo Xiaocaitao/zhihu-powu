@@ -34,7 +34,17 @@ export function createPowuServer(options: Options = {}): Server {
     }
   });
 }
-function ownerId(req: IncomingMessage, res: ServerResponse) { const token = req.headers.cookie?.match(/(?:^|; )powu_owner=([^;]+)/)?.[1]; if (token && owners.has(token)) return owners.get(token)!; const key = randomBytes(32).toString("base64url"); const owner = randomBytes(24).toString("base64url"); owners.set(key, owner); res.setHeader("set-cookie", `powu_owner=${key}; HttpOnly; SameSite=Lax; Path=/`); return owner; }
+function ownerId(req: IncomingMessage, res: ServerResponse) {
+  const token = req.headers.cookie?.match(/(?:^|; )(?:__Host-)?powu_owner=([^;]+)/)?.[1];
+  if (token && owners.has(token)) return owners.get(token)!;
+  const key = randomBytes(32).toString("base64url");
+  const owner = randomBytes(24).toString("base64url");
+  owners.set(key, owner);
+  const secure = process.env.COOKIE_SECURE === "true" || (process.env.NODE_ENV === "production" && process.env.COOKIE_SECURE !== "false");
+  const name = secure ? "__Host-powu_owner" : "powu_owner";
+  res.setHeader("set-cookie", `${name}=${key}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secure ? "; Secure" : ""}`);
+  return owner;
+}
 async function serve(res: ServerResponse, relative: string, type: string) { try { res.writeHead(200, { "content-type": type }); res.end(await readFile(new URL(relative, import.meta.url))); } catch { send(res, 404, { error: "not_found" }); } }
 function send(res: ServerResponse, status: number, body: unknown) { if (!res.headersSent) res.writeHead(status, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); }
 async function readBody(req: IncomingMessage) { const chunks: Buffer[] = []; let size = 0; for await (const c of req) { const b = Buffer.from(c); size += b.length; if (size > 128 * 1024) throw new ChatError("body_too_large", 413); chunks.push(b); } if (!chunks.length) throw new ChatError("body_required", 400); return JSON.parse(Buffer.concat(chunks).toString()); }

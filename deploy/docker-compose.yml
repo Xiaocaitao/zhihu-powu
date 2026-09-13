@@ -25,6 +25,8 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 3000
+      NODE_ENV: production
+      COOKIE_SECURE: "true"
       PGHOST: postgres
       PGPORT: 5432
       PGDATABASE: powu
@@ -36,7 +38,26 @@ services:
       PI_API_KEY: ${PI_API_KEY:?PI_API_KEY is required}
       ZHIHU_ACCESS_SECRET: ${ZHIHU_ACCESS_SECRET:?ZHIHU_ACCESS_SECRET is required}
     ports:
-      - "0.0.0.0:${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+
+  caddy:
+    image: ${CADDY_IMAGE:?CADDY_IMAGE is required}
+    container_name: powu-caddy
+    restart: unless-stopped
+    depends_on:
+      powu:
+        condition: service_started
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
 
 volumes:
   powu-postgres-data:
+  caddy-data:
+  caddy-config:
