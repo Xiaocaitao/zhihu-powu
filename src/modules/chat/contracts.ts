@@ -1,0 +1,29 @@
+import { z } from "zod";
+
+export const chatRequestSchema = z.object({
+  message: z.string().min(1).max(32000).refine(value => value.trim().length > 0),
+  request_id: z.uuid(),
+  session_id: z.uuid().optional(),
+}).strict();
+export type ChatRequest = z.infer<typeof chatRequestSchema>;
+export type ChatEvent = { type: string; [key: string]: unknown };
+export type Emit = (event: ChatEvent) => Promise<void>;
+// Transcript is opaque infrastructure data; only the runtime interprets Pi messages.
+export type Transcript = object[];
+export interface ChatRuntime {
+  run(input: { message: string; sessionId: string; history: Transcript; signal: AbortSignal }, emit: Emit): Promise<Transcript>;
+}
+export type RunStatus = "completed" | "failed" | "cancelled" | "interrupted";
+export type SavedRun = { request_id: string; message: string; status: string; events: ChatEvent[] };
+export interface ChatStore {
+  begin(owner: string, input: ChatRequest): Promise<{
+    sessionId: string; history: Transcript;
+    finish(status: RunStatus, events: ChatEvent[], history?: Transcript): Promise<void>;
+    release(): Promise<void>;
+  }>;
+  get(owner: string, sessionId: string): Promise<SavedRun[] | null>;
+}
+export class ChatError extends Error {
+  status: number;
+  constructor(code: string, status = 500) { super(code); this.status = status; }
+}

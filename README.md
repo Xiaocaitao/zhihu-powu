@@ -1,8 +1,10 @@
 # 破雾 · 知乎开放平台 Tools
 
-对照 2026-08-31 官方文档，提供 **21 个 TypeScript 工具**，覆盖所有给出具体请求协议的接口，包括 OAuth 授权地址构造。当前是独立工具层，不包含 Pi SDK/MCP 适配、LLM 编排、Web 页面或数据库。
+对照 2026-08-31 官方文档，提供 **21 个 TypeScript 工具**。Pi runtime 自主编排模型与工具，PostgreSQL 保存通用会话事件。
 
 完整 endpoint、参数与限制见 [API 覆盖清单](docs/api-tools.md)。原始产品需求见 [PRD](docs/PRD.md)。
+
+当前分层和需求接入规则见 [云 Agent 助手架构](docs/architecture-refactor-plan.md)。
 
 ## 工具分组
 
@@ -42,6 +44,38 @@ npm run typecheck
 npm test
 ```
 
+## 通用聊天
+
+启动服务前，在 `.env` 中配置 `DATABASE_URL`、`PI_PROVIDER`、火山方舟 Endpoint ID（`PI_MODEL`）、`PI_API_KEY` 和可选的 `PI_BASE_URL`。服务启动时会幂等创建旧路线表和聊天会话表。
+
+```bash
+npm start
+```
+
+发送任意消息：
+
+```bash
+curl -N -X POST http://127.0.0.1:3000/api/chat \
+  -H 'content-type: application/json' \
+  -d '{"message":"你好","request_id":"00000000-0000-4000-8000-000000000001"}'
+```
+
+`POST /api/chat` 返回 `text/event-stream`，包含文本、供应商实际返回的思考摘要和工具生命周期事件；前端直接增量渲染 Markdown，不解析成固定业务 JSON：
+
+```bash
+curl -N -X POST http://127.0.0.1:3000/api/chat \
+  -H 'content-type: application/json' \
+  -d '{"message":"请解释 SSE","request_id":"00000000-0000-4000-8000-000000000002"}'
+```
+
+查询会话：
+
+```bash
+curl http://127.0.0.1:3000/api/sessions/<session_id>
+```
+
+请求链路是：HTTP 校验协议 → 会话存储与同会话锁 → Pi runtime 自主循环（模型/工具/事件）→ 保存透明事件和 transcript；失败或取消保留明确状态。旧 /api/routes 返回 410，不删除历史数据。`/healthz` 用于存活检查，`/readyz` 用于数据库就绪检查。
+
 失败输出 `ok: false` 并使用非零退出码。不自动重试、不自动翻页、不自动轮询或下载结果文件。
 
 ## 上传和任务创建
@@ -66,8 +100,8 @@ SDK 上传还必须配置 `allowedUploadFiles`，精确到已获授权的单个�
 ## 服务端接入
 
 ```ts
-import { ZhihuClient } from "./src/zhihu/client.ts";
-import { createZhihuTools } from "./src/agent/tools.ts";
+import { ZhihuClient } from "./src/integrations/zhihu/client.ts";
+import { createZhihuTools } from "./src/agent/tools/zhihu.ts";
 
 // 每个用户会话独立实例，同一会话内复用。
 const client = new ZhihuClient();
@@ -76,7 +110,7 @@ const search = tools.find(tool => tool.name === "search_zhihu")!;
 const result = await search.execute({ query: "AI 应用开发 学习路线", count: 3 });
 ```
 
-工具提供 `name`、`description`、`inputSchema`、`method`、`endpoint`、`documentation`、`requiresConfirmation`、`annotations` 和 `execute(input, context?)`。这是普通业务工具契约，不是可直接注册的 Pi Tool/MCP Server；需要按宿主 SDK 添加适配。
+工具提供 `name`、`description`、`inputSchema`、`method`、`endpoint`、`documentation`、`requiresConfirmation`、`annotations` 和 `execute(input, context?)`。`src/agent/tools/pi-adapter.ts` 将它们转换为 Pi Tool；模型只能看到可信宿主授权的工具。
 
 - 成功：`{ ok: true, data, meta: { fetched_at, cached, idempotent_replayed? } }`。
 - 失败：`{ ok: false, error: { code, message, http_status?, api_code? } }`，不回显原始请求、响应及底层异常中的密钥。

@@ -1,0 +1,136 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: build and deploy
+    if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'push' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    env:
+      ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+      ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      IMAGE: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/powu:${{ github.sha }}
+      LATEST_IMAGE: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/powu:latest
+      POSTGRES_IMAGE: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/postgres:16-alpine
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Log in to Alibaba Cloud Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ env.ACR_USERNAME }}
+          password: ${{ env.ACR_PASSWORD }}
+
+      - name: Mirror PostgreSQL image to Alibaba Cloud Container Registry
+        run: |
+          if docker manifest inspect "$POSTGRES_IMAGE" >/dev/null 2>&1; then
+            echo "PostgreSQL image already exists in ACR"
+            exit 0
+          fi
+          docker pull postgres:16-alpine
+          docker tag postgres:16-alpine "$POSTGRES_IMAGE"
+          docker push "$POSTGRES_IMAGE"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}
+            ${{ env.LATEST_IMAGE }}
+
+      - name: Upload ECS Compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          source: deploy/docker-compose.yml
+          target: /opt/powu
+          strip_components: 1
+
+      - name: Update ECS service
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          ACR_REGISTRY: ${{ env.ACR_REGISTRY }}
+          ACR_USERNAME: ${{ env.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ env.ACR_PASSWORD }}
+          ACR_IMAGE: ${{ env.IMAGE }}
+          POSTGRES_IMAGE: ${{ env.POSTGRES_IMAGE }}
+          APP_PORT: 3000
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          PI_PROVIDER: ${{ vars.PI_PROVIDER || 'doubao' }}
+          PI_MODEL: ${{ vars.PI_MODEL }}
+          PI_BASE_URL: ${{ vars.PI_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3' }}
+          PI_API_KEY: ${{ secrets.PI_API_KEY }}
+          ZHIHU_ACCESS_SECRET: ${{ secrets.ZHIHU_ACCESS_SECRET }}
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,ACR_IMAGE,POSTGRES_IMAGE,APP_PORT,POSTGRES_PASSWORD,PI_PROVIDER,PI_MODEL,PI_BASE_URL,PI_API_KEY,ZHIHU_ACCESS_SECRET
+          script: |
+            set -eu
+            install -d -m 755 /opt/powu
+            umask 077
+            printf '%s\n' \
+              "ACR_IMAGE=${ACR_IMAGE}" \
+              "POSTGRES_IMAGE=${POSTGRES_IMAGE}" \
+              "APP_PORT=${APP_PORT}" \
+              "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" \
+              "PI_PROVIDER=${PI_PROVIDER:-doubao}" \
+              "PI_MODEL=${PI_MODEL}" \
+              "PI_BASE_URL=${PI_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}" \
+              "PI_API_KEY=${PI_API_KEY}" \
+              "ZHIHU_ACCESS_SECRET=${ZHIHU_ACCESS_SECRET}" > /opt/powu/.env
+            printf '%s' "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" --username "$ACR_USERNAME" --password-stdin
+            if docker compose version >/dev/null 2>&1; then
+              compose() { docker compose "$@"; }
+            else
+              compose() { docker-compose "$@"; }
+              # docker-compose 1.29.2 cannot recreate containers created by
+              # newer Docker images because it expects the removed
+              # ContainerConfig metadata. Remove old containers for only the
+              # powu service; PostgreSQL and its named volume are untouched.
+              for container_id in $(docker ps -aq --filter 'label=com.docker.compose.service=powu'); do
+                docker rm -f "$container_id"
+              done
+            fi
+            compose --env-file /opt/powu/.env -f /opt/powu/docker-compose.yml pull
+            compose --env-file /opt/powu/.env -f /opt/powu/docker-compose.yml up -d --remove-orphans
+            for attempt in $(seq 1 20); do
+              if curl --fail --silent http://127.0.0.1:${APP_PORT}/readyz; then
+                exit 0
+              fi
+              sleep 2
+            done
+            compose --env-file /opt/powu/.env -f /opt/powu/docker-compose.yml ps
+            exit 1
