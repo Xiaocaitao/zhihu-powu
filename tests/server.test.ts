@@ -83,6 +83,23 @@ test("interview growth endpoint returns ended interview history", async t => {
   assert.equal(body.items[0].status, "ended_early");
 });
 
+test("interview history reflects a submitted answer", async () => {
+  const registry = createDefaultCapabilityRegistry();
+  const start = registry.list().find(capability => capability.name === "start_interview");
+  const submit = registry.list().find(capability => capability.name === "submit_interview_answer");
+  const records = registry.list().find(capability => capability.name === "get_interview_records");
+  assert.ok(start && submit && records);
+  const owner = "interview-answer-history-owner";
+  const context = { ownerId: owner, requestId: "interview-answer-history", operationKey: "interview-answer-history" };
+  const started = await start.execute(context, { target: { kind: "skills", id: "typescript" }, questionCount: 2 });
+  assert.equal(started.ok, true);
+  const interview = (started.data as { interview: { interviewId: string; questions: Array<{ questionId: string }> } }).interview;
+  const answered = await submit.execute({ ...context, requestId: "interview-answer-history-submit", operationKey: "interview-answer-history-submit" }, { interviewId: interview.interviewId, questionId: interview.questions[0].questionId, answer: "我完成过一次 TypeScript 服务重构。" });
+  assert.equal(answered.ok, true);
+  const listed = await records.execute({ ...context, requestId: "interview-answer-history-read", operationKey: "interview-answer-history-read" }, {});
+  assert.equal((listed.data as { items: Array<{ answeredCount: number }> }).items[0].answeredCount, 1);
+});
+
 test("chat request rejects missing protocol fields", async t => {
   const server = createPowuServer({ chatService: new ChatService({ create: async () => ({ sessionId: "00000000-0000-4000-8000-000000000001", createdAt: new Date().toISOString() }), list: async () => [], begin: async () => { throw new Error("unused"); }, get: async () => null }, { run: async () => [] }) }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
   const response = await fetch(`http://127.0.0.1:${address.port}/api/chat`, { method: "POST", body: JSON.stringify({ message: "hi" }) }); assert.equal(response.status, 400);

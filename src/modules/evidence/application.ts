@@ -81,6 +81,9 @@ export class EvidenceApplication {
     if (result.ok && result.changed && answer && this.repository.saveAnswer) {
       await this.repository.saveAnswer({ answerId: answer.answerId, ownerId: ctx.ownerId, interviewId, questionId, text: answer.text });
       if (this.repository.saveAnswerFeedback && answer.feedback) await this.repository.saveAnswerFeedback({ answerId: answer.answerId, ownerId: ctx.ownerId, status: "succeeded", result: { feedback: answer.feedback } });
+      // Keep the interview header in sync with the durable answer row. History
+      // reads answered_count from ei_interviews, while answers live in ei_answers.
+      if (result.data && "interview" in result.data) await this.repository.saveInterview(result.data.interview as any);
     }
     return result;
   }
