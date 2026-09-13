@@ -74,22 +74,22 @@ export function createPowuServer(options: Options = {}): Server {
     if (path === "/api/chat" && req.method === "POST") return chat(req, res);
     if (path === "/api/sessions" && req.method === "POST") {
       if (!options.chatService) return send(res, 503, { error: "chat_unavailable" });
-      try { const created = await options.chatService.createSession(ownerId(req, res)); return send(res, 201, { session_id: created.sessionId, created_at: created.createdAt }); }
+      try { const created = await options.chatService.createSession(authenticatedOwner(req, res)); return send(res, 201, { session_id: created.sessionId, created_at: created.createdAt }); }
       catch (error) { console.error("session creation failed", error); return send(res, 502, { ok: false, error: "session_create_failed" }); }
     }
     if (path === "/api/sessions" && req.method === "GET") {
       if (!options.chatService) return send(res, 503, { error: "chat_unavailable" });
-      try { return send(res, 200, { sessions: await options.chatService.listSessions(ownerId(req, res)) }); }
+      try { return send(res, 200, { sessions: await options.chatService.listSessions(authenticatedOwner(req, res)) }); }
       catch (error) { console.error("session listing failed", error); return send(res, 502, { ok: false, error: "session_list_failed" }); }
     }
     const session = path.match(/^\/api\/sessions\/([0-9a-f-]+)$/i)?.[1];
-    if (session && req.method === "GET") { if (!options.chatService) return send(res, 503, { error: "chat_unavailable" }); const runs = await options.chatService.get(ownerId(req, res), session); return send(res, runs ? 200 : 404, runs ?? { error: "not_found" }); }
+    if (session && req.method === "GET") { if (!options.chatService) return send(res, 503, { error: "chat_unavailable" }); const runs = await options.chatService.get(authenticatedOwner(req, res), session); return send(res, runs ? 200 : 404, runs ?? { error: "not_found" }); }
     return send(res, 404, { ok: false, error: "not_found" });
 
     async function chat(request: IncomingMessage, response: ServerResponse) {
       if (!options.chatService) return send(response, 503, { error: "chat_unavailable" });
       try {
-        const input = chatRequestSchema.parse(await readBody(request)); const owner = ownerId(request, response); const controller = new AbortController(); const cancel = () => controller.abort(); request.once("aborted", cancel); response.once("close", cancel);
+        const input = chatRequestSchema.parse(await readBody(request)); const owner = authenticatedOwner(request, response); const controller = new AbortController(); const cancel = () => controller.abort(); request.once("aborted", cancel); response.once("close", cancel);
         response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", connection: "keep-alive", "x-accel-buffering": "no" });
         await options.chatService.chat(owner, input, controller.signal, async event => { if (!response.destroyed && !response.writableEnded) response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`); }); response.end(); request.removeListener("aborted", cancel); response.removeListener("close", cancel);
       } catch (error) { if (response.headersSent) { if (!response.writableEnded) { response.write(`event: error\ndata: ${JSON.stringify({ type: "error", error: error instanceof ChatError ? error.message : "chat_failed" })}\n\n`); response.end(); } return; } if (error instanceof ZodError || error instanceof SyntaxError || error instanceof ChatError) return send(response, error instanceof ChatError ? error.status : 400, { ok: false, error: error instanceof ChatError ? error.message : "invalid_request" }); console.error("chat failed", error); return send(response, 502, { ok: false, error: "chat_failed" }); }
@@ -97,15 +97,21 @@ export function createPowuServer(options: Options = {}): Server {
   });
 }
 function oauthSession(req: IncomingMessage, res: ServerResponse) {
-  const owner = ownerId(req, res);
+  const owner = cookieOwner(req, res);
   let session = oauthSessions.get(owner);
   if (!session) { session = {}; oauthSessions.set(owner, session); }
   return session;
 }
+function authenticatedOwner(req: IncomingMessage, res: ServerResponse) {
+  const anonymousOwner = cookieOwner(req, res);
+  const session = oauthSessions.get(anonymousOwner);
+  if (session?.accessToken && session.expiresAt && session.expiresAt > Date.now() && session.profile?.uid) return `zhihu:${session.profile.uid}`;
+  return anonymousOwner;
+}
 function sameSecret(a: string, b: string) { return a.length === b.length && Buffer.from(a).equals(Buffer.from(b)); }
 function oauthError(error: unknown) { return { code: error instanceof Error && "code" in error ? String((error as { code?: unknown }).code) : "OAUTH_FAILED", message: error instanceof Error ? error.message : "知乎 OAuth 登录失败，请重试。" }; }
 function redirect(res: ServerResponse, location: string, cookie: string | string[] | number | undefined) { const headers: Record<string, string | string[]> = { location }; if (typeof cookie === "string" || Array.isArray(cookie)) headers["set-cookie"] = cookie; res.writeHead(302, headers); res.end(); }
-function ownerId(req: IncomingMessage, res: ServerResponse) {
+function cookieOwner(req: IncomingMessage, res: ServerResponse) {
   const token = req.headers.cookie?.match(/(?:^|; )(?:__Host-)?powu_owner=([^;]+)/)?.[1];
   if (token && owners.has(token)) return owners.get(token)!;
   const key = randomBytes(32).toString("base64url");

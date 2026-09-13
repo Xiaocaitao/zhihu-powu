@@ -74,7 +74,7 @@ curl -N -X POST http://127.0.0.1:3000/api/chat \
 curl http://127.0.0.1:3000/api/sessions/<session_id>
 ```
 
-会话管理：`POST /api/sessions` 创建当前浏览器归属的新会话，`GET /api/sessions` 列出当前浏览器可见的会话摘要。两者都依赖服务端下发的 HttpOnly `powu_owner` cookie；不同浏览器会话之间不能互相读取。旧客户端不传 `session_id` 时，`POST /api/chat` 仍会按原行为自动创建会话。
+会话管理：`POST /api/sessions` 创建当前用户的新会话，`GET /api/sessions` 列出当前用户可见的会话摘要。已登录时会话归属使用知乎 `uid`，同一用户跨浏览器仍可访问自己的会话；未登录时回退到 HttpOnly `powu_owner` 匿名身份。读取会话和发送消息都会同时校验用户归属与 `session_id`，不同用户或不同会话之间不会串历史。旧客户端不传 `session_id` 时，`POST /api/chat` 仍会按原行为自动创建会话。
 
 请求链路是：HTTP 校验协议 → 会话存储与同会话锁 → Pi runtime 自主循环（模型/工具/事件）→ 保存透明事件和 transcript；失败或取消保留明确状态。旧 /api/routes 返回 410，不删除历史数据。`/healthz` 用于存活检查，`/readyz` 用于数据库就绪检查。
 
