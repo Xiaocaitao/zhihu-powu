@@ -9,3 +9,5 @@ export type SkillEvidence = { skillId: string; support: "insufficient" | "partia
 export type Interview = { interviewId: string; ownerId: string; target: { kind: "job" | "skills" | "project"; id: string }; status: "active" | "completed" | "ended_early"; totalQuestions: number; answeredCount: number; questions: { questionId: string; ordinal: number; prompt: string }[]; answers: { answerId: string; questionId: string; text: string; feedback?: string }[] };
 
 export type CapabilityResult<T> = { ok: boolean; changed: boolean; domain: "evidence"; entityId?: string; status: "read" | "applied" | "rejected"; summary: string; data?: T; error?: { code: string; message: string } };
+export type Review = { reviewId: string; ownerId: string; from: string; to: string; status: "succeeded"; progress: string[]; blockers: string[]; suggestions: string[]; createdAt: string };
+export type Assessment = { assessmentId: string; ownerId: string; evidenceIds: string[]; skillIds: string[]; status: "succeeded"; findings: SkillEvidence[]; createdAt: string };
