@@ -4,7 +4,7 @@ import { z } from "zod";
 import { recordInputSchema } from "./contracts.ts";
 
 const id = z.string().trim().min(1);
-const listSchema = z.object({ from: z.string().datetime({ offset: true }).optional(), to: z.string().datetime({ offset: true }).optional(), taskId: id.optional(), skillId: id.optional() }).strict();
+const listSchema = z.object({ from: z.string().datetime({ offset: true }).optional(), to: z.string().datetime({ offset: true }).optional(), kind: z.enum(["activity", "project_outcome"]).optional(), taskId: id.optional(), skillId: id.optional(), limit: z.number().int().min(1).max(100).optional(), cursor: id.optional() }).strict();
 const evidenceSchema = z.object({ evidenceIds: z.array(id).min(1).max(20), skillIds: z.array(id).min(1).max(20) }).strict();
 const reviewSchema = z.object({ from: z.string().datetime({ offset: true }), to: z.string().datetime({ offset: true }) }).strict();
 const interviewTarget = z.object({ kind: z.enum(["job", "skills", "project"]), id }).strict();

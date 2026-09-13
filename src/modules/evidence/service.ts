@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { recordInputSchema, type EvidenceContext, type LearningRecord, type RecordInput, type Interview, type CapabilityResult, type SkillEvidence, type Review, type Assessment } from "./contracts.ts";
+import { recordInputSchema, type EvidenceContext, type LearningRecord, type RecordInput, type Interview, type CapabilityResult, type SkillEvidence, type Review, type Assessment, type LearningRecordFilter } from "./contracts.ts";
 
 export class EvidenceService {
   private records = new Map<string, LearningRecord>();
@@ -16,9 +16,9 @@ export class EvidenceService {
     const now = this.now(); const record: LearningRecord = { ...parsed, durationMinutes: parsed.durationMinutes ?? null, skillIds: parsed.skillIds ?? [], recordId: randomUUID(), ownerId: ctx.ownerId, version: 1, status: "active", createdAt: now, updatedAt: now };
     this.records.set(record.recordId, record); if (key) this.operations.set(key, record.recordId); return this.result({ record }, "学习记录已保存", true, record.recordId);
   }
-  getLearningRecords(ctx: EvidenceContext, filter: { from?: string; to?: string; taskId?: string; skillId?: string } = {}) {
-    if (filter.from && filter.to && filter.from >= filter.to) return { ok: false, changed: false, domain: "evidence" as const, status: "rejected" as const, summary: "时间范围无效", error: { code: "INVALID_ARGUMENT", message: "起始时间必须早于结束时间" } } as CapabilityResult<{ items: LearningRecord[] }>;
-    const items = [...this.records.values()].filter(r => r.ownerId === ctx.ownerId && r.status === "active").filter(r => !filter.taskId || r.taskId === filter.taskId).filter(r => !filter.skillId || r.skillIds?.includes(filter.skillId)).filter(r => !filter.from || r.occurredAt >= filter.from!).filter(r => !filter.to || r.occurredAt < filter.to!); return this.result({ items }, "已读取学习记录");
+  getLearningRecords(ctx: EvidenceContext, filter: LearningRecordFilter = {}) {
+    if (filter.from && filter.to && filter.from >= filter.to) return { ok: false, changed: false, domain: "evidence" as const, status: "rejected" as const, summary: "时间范围无效", error: { code: "INVALID_ARGUMENT", message: "起始时间必须早于结束时间" } } as CapabilityResult<{ items: LearningRecord[]; page: { hasMore: boolean; nextCursor?: string } }>;
+    const items = [...this.records.values()].filter(r => r.ownerId === ctx.ownerId && r.status === "active").filter(r => !filter.kind || r.kind === filter.kind).filter(r => !filter.taskId || r.taskId === filter.taskId).filter(r => !filter.skillId || r.skillIds?.includes(filter.skillId)).filter(r => !filter.from || r.occurredAt >= filter.from!).filter(r => !filter.to || r.occurredAt < filter.to!).sort((a,b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordId.localeCompare(a.recordId)); const limit = Math.min(Math.max(filter.limit ?? items.length, 1), 100); return this.result({ items: items.slice(0, limit), page: { hasMore: items.length > limit, nextCursor: items.length > limit ? items[limit - 1]?.recordId : undefined } }, "已读取学习记录");
   }
   updateLearningEvidence(ctx: EvidenceContext, recordId: string, changes: Partial<RecordInput> | { withdraw: string }): CapabilityResult<{ record: LearningRecord }> {
     const record = this.records.get(recordId); if (!record || record.ownerId !== ctx.ownerId) return { ok: false, changed: false, domain: "evidence", status: "rejected", summary: "记录不存在", error: { code: "NOT_FOUND", message: "记录不存在" } };
