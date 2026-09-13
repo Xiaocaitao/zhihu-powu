@@ -50,6 +50,7 @@
     .crumb { display: flex; align-items: center; gap: 9px; font-size: 13px; color: #9aa8ba; }
     .crumb strong { color: var(--ink); font-size: 14px; }
     .crumb .badge { padding: 4px 8px; border-radius: 99px; color: #2673cf; background: #eaf3ff; font-size: 11px; font-weight: 650; }
+    .top-actions { display: flex; gap: 4px; }
     .content { width: min(900px, calc(100% - 80px)); flex: 1; margin: 0 auto; padding: 50px 0 170px; overflow: auto; }
     .welcome { display: flex; align-items: flex-start; gap: 15px; margin-bottom: 40px; }
     .welcome-mark { width: 42px; height: 42px; object-fit: contain; margin-top: 2px; }
@@ -68,12 +69,6 @@
     .bubble strong { color: var(--ink); }
     .checklist { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-top: 13px; padding-top: 13px; border-top: 1px solid #edf2f7; color: #667991; font-size: 13px; }
     .checklist span::before { content: '✓'; display: inline-grid; place-items: center; width: 17px; height: 17px; margin-right: 6px; border-radius: 50%; color: var(--blue); background: #e8f3ff; font-size: 11px; }
-    .execution-log { margin-top: 14px; padding: 12px 14px; border: 1px solid #e6eef8; border-radius: 12px; background: #f8fbff; color: #667991; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .execution-log-title { margin-bottom: 5px; color: #50709a; font-family: inherit; font-weight: 700; }
-    .execution-log-line { display: flex; gap: 8px; align-items: baseline; }
-    .execution-log-line::before { content: '›'; color: var(--blue); font-weight: 800; }
-    .execution-log-line.done::before { content: '✓'; color: #26a269; }
-    .execution-log-line.error { color: #b45151; }
     .composer-wrap { position: absolute; right: 0; bottom: 0; left: 0; padding: 22px 34px 28px; background: linear-gradient(transparent, #fff 24%); }
     .composer { display: flex; align-items: flex-end; gap: 10px; width: min(900px, 100%); margin: 0 auto; padding: 12px 13px 12px 17px; border: 1px solid #dce8f5; border-radius: 18px; background: rgba(255,255,255,.96); box-shadow: var(--shadow); }
     textarea { flex: 1; min-height: 24px; max-height: 100px; padding: 4px 0; border: 0; outline: 0; resize: none; color: var(--ink); background: transparent; font-size: 14px; line-height: 1.6; }
@@ -84,13 +79,6 @@
     .send { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; color: #fff; background: var(--blue); font-size: 17px; transition: .18s ease; }
     .send:hover { transform: translateY(-1px); background: #005cc8; }
     .hint { margin-top: 9px; color: #aab6c4; font-size: 10px; text-align: center; }
-    .markdown p { margin: 0 0 10px; }
-    .markdown p:last-child { margin-bottom: 0; }
-    .markdown ul, .markdown ol { margin: 6px 0; padding-left: 22px; }
-    .markdown code { padding: 2px 5px; border-radius: 5px; background: #edf3f9; font: .9em ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .markdown pre { overflow: auto; padding: 12px; border-radius: 9px; color: #eaf3ff; background: #182333; }
-    .markdown pre code { padding: 0; background: transparent; }
-    .markdown a { color: var(--blue); }
     .mascot { position: absolute; right: 26px; bottom: 120px; width: 70px; height: 70px; object-fit: contain; opacity: .95; pointer-events: none; filter: drop-shadow(0 10px 12px rgba(54,98,146,.12)); }
     .toast { position: fixed; right: 25px; top: 76px; padding: 10px 14px; border: 1px solid #dcecff; border-radius: 10px; color: #2866ac; background: #f6fbff; box-shadow: 0 10px 25px rgba(42,91,145,.12); font-size: 12px; opacity: 0; transform: translateY(-8px); transition: .2s ease; pointer-events: none; }
     .toast.show { opacity: 1; transform: translateY(0); }
@@ -112,11 +100,16 @@
         <button class="chat"><span class="dot"></span><span class="label">知乎内容运营计划</span><time>周二</time></button>
         <button class="chat"><span class="dot"></span><span class="label">TypeScript 入门笔记</span><time>周一</time></button>
       </div>
+      <div class="section-title">快捷入口</div>
+      <div class="chat-list">
+        <button class="chat"><span class="dot" style="background:#42c58a"></span><span class="label">我的收藏</span></button>
+        <button class="chat"><span class="dot" style="background:#ffb84d"></span><span class="label">提示词库</span></button>
+      </div>
       <div class="sidebar-spacer"></div>
       <div class="profile"><div class="avatar">LL</div><div><strong>刘同学</strong><span>个人空间 · 设置</span></div><button class="icon-btn" style="margin-left:auto">···</button></div>
     </aside>
     <main class="main">
-      <header class="topbar"><div class="crumb"><strong>后端开发学习路线</strong><span>·</span><span>看山助手</span><span class="badge">Beta</span></div></header>
+      <header class="topbar"><div class="crumb"><strong>后端开发学习路线</strong><span>·</span><span>看山助手</span><span class="badge">Beta</span></div><div class="top-actions"><button class="icon-btn" title="分享">⌁</button><button class="icon-btn" title="更多">···</button></div></header>
       <section class="content" id="content">
         <div class="welcome"><img class="welcome-mark" src="assets/kanshan-front.jpg" alt="看山"/><div><p class="eyebrow">HELLO, 看山</p><h1>把一个模糊目标，<br/>变成一条可执行的路。</h1><p class="intro">告诉我你想去哪里、现在在哪里，以及每周有多少时间。我会和你一起拆解问题，给出清晰、可落地的下一步。</p></div></div>
         <div class="message user"><div class="bubble">我想系统学习后端开发，希望半年内能独立完成一个小型项目。每周大概有 10 小时。</div><div class="mini-avatar">我</div></div>
@@ -127,168 +120,13 @@
     </main>
   </div>
   <div class="toast" id="toast"></div>
-  <script src="/assets/marked.umd.js"></script>
   <script>
     const toast = document.querySelector('#toast');
     function showToast(text) { toast.textContent = text; toast.classList.add('show'); clearTimeout(window.toastTimer); window.toastTimer = setTimeout(() => toast.classList.remove('show'), 1800); }
-    function markdown(value) {
-      const escaped = String(value ?? '').replace(/[&<>\"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[character]));
-      return marked.parse(escaped, { breaks: true, gfm: true });
-    }
     document.querySelectorAll('.chat').forEach(item => item.addEventListener('click', () => { document.querySelectorAll('.chat').forEach(c => c.classList.remove('active')); item.classList.add('active'); showToast('已切换到「' + item.querySelector('.label').textContent + '」'); }));
     document.querySelector('#newChat').addEventListener('click', () => { document.querySelectorAll('.chat').forEach(c => c.classList.remove('active')); showToast('已创建新对话'); document.querySelector('#input').focus(); });
-    document.querySelector('#send').addEventListener('click', submitRoute);
+    document.querySelector('#send').addEventListener('click', () => { const input = document.querySelector('#input'); if (!input.value.trim()) { showToast('先写点什么吧'); input.focus(); return; } showToast('原型演示：消息已发送'); input.value = ''; });
     document.querySelector('#input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.querySelector('#send').click(); } });
-
-    async function submitRoute() {
-      const input = document.querySelector('#input');
-      const send = document.querySelector('#send');
-      if (send.disabled) return;
-      const goal = input.value.trim();
-      if (!goal) { showToast('先写点什么吧'); input.focus(); return; }
-      if (goal.length > 1000) { showToast('请将目标描述控制在 1000 字以内'); return; }
-      appendMessage('user', goal);
-      input.value = '';
-      send.disabled = true;
-      const log = appendProgressMessage();
-      appendLogLine(log, '正在提交请求');
-      try {
-        const response = await fetch('/api/routes', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ goal, profile: { weekly_hours: 10 } }),
-        });
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}));
-          const details = error.issues?.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('；');
-          throw new Error(details || error.error || '请求失败，请稍后重试');
-        }
-        const record = await readRouteStream(response, log);
-        appendRouteMessage(record);
-      } catch (error) {
-        appendLogLine(log, error instanceof Error ? error.message : '生成失败', true);
-        showToast('生成失败');
-      } finally {
-        send.disabled = false;
-      }
-    }
-
-    function appendMessage(role, content) {
-      const message = document.createElement('div');
-      message.className = `message ${role}`;
-      const avatar = document.createElement('div');
-      avatar.className = 'mini-avatar';
-      avatar.textContent = role === 'user' ? '我' : '山';
-      const bubble = document.createElement('div');
-      bubble.className = 'bubble';
-      bubble.textContent = content;
-      message.append(avatar, bubble);
-      document.querySelector('#content').append(message);
-      message.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      return bubble;
-    }
-
-    function appendProgressMessage() {
-      const message = document.createElement('div');
-      message.className = 'message';
-      const avatar = document.createElement('div');
-      avatar.className = 'mini-avatar';
-      avatar.textContent = '山';
-      const bubble = document.createElement('div');
-      bubble.className = 'bubble';
-      bubble.innerHTML = '<strong>正在为你生成路线</strong>';
-      const log = document.createElement('div');
-      log.className = 'execution-log';
-      log.setAttribute('role', 'log');
-      log.setAttribute('aria-live', 'polite');
-      log.innerHTML = '<div class="execution-log-title">执行日志</div>';
-      bubble.append(log);
-      message.append(avatar, bubble);
-      document.querySelector('#content').append(message);
-      message.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      return log;
-    }
-
-    function appendLogLine(log, message, error = false) {
-      const line = document.createElement('div');
-      line.className = `execution-log-line${error ? ' error' : ''}`;
-      line.textContent = `${new Date().toLocaleTimeString('zh-CN', { hour12: false })} ${message}`;
-      log.append(line);
-      log.parentElement.parentElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }
-
-    async function readRouteStream(response, log) {
-      if (!response.body) throw new Error('浏览器不支持 SSE 流式响应');
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let record;
-      try {
-      while (true) {
-        const { value, done } = await reader.read();
-        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-        const blocks = buffer.split(/\r?\n\r?\n/);
-        buffer = blocks.pop() || '';
-        for (const block of blocks) {
-          const event = parseSseBlock(block);
-          if (!event) continue;
-          if (event.name === 'progress') appendLogLine(log, event.data.message || '处理中');
-          if (event.name === 'complete') { record = event.data; appendLogLine(log, '完成，路线已保存', false); log.lastElementChild.classList.add('done'); }
-          if (event.name === 'error') throw new Error(event.data.error || '路线生成失败');
-        }
-        if (done) break;
-      }
-      if (buffer.trim()) {
-        const event = parseSseBlock(buffer);
-        if (event?.name === 'complete') record = event.data;
-        if (event?.name === 'error') throw new Error(event.data.error || '路线生成失败');
-      }
-      if (!record) throw new Error('服务未返回完整路线');
-      return record;
-      } finally {
-        await reader.cancel().catch(() => {});
-        reader.releaseLock();
-      }
-    }
-
-    function parseSseBlock(block) {
-      const lines = block.split(/\r?\n/);
-      const name = lines.find(line => line.startsWith('event: '))?.slice(7) || 'message';
-      const raw = lines.filter(line => line.startsWith('data: ')).map(line => line.slice(6)).join('\n');
-      return raw ? { name, data: JSON.parse(raw) } : null;
-    }
-
-    function appendRouteMessage(record) {
-      const plan = record.plan || {};
-      const bubble = appendMessage('assistant', '路线已经生成好了。');
-      const summary = document.createElement('div');
-      summary.className = 'markdown';
-      summary.innerHTML = markdown(plan.summary || '已完成路线规划。');
-      bubble.append(summary);
-      const checklist = document.createElement('div');
-      checklist.className = 'checklist';
-      for (const item of (plan.two_week_plan || [])) {
-        const step = document.createElement('span');
-        step.className = 'markdown';
-        step.innerHTML = markdown(`第 ${item.day} 天：${item.title}（${item.hours} 小时）\n${(item.actions || []).join('；')}\n完成标准：${item.acceptance}`);
-        checklist.append(step);
-      }
-      bubble.append(checklist);
-      const sources = document.createElement('p');
-      for (const source of plan.sources || []) {
-        const link = document.createElement('a');
-        try {
-          const url = new URL(source.url);
-          if (!['http:', 'https:'].includes(url.protocol)) continue;
-          link.href = url.href;
-        } catch { continue; }
-        link.target = '_blank';
-        link.rel = 'noreferrer';
-        link.textContent = source.title;
-        sources.append(link, document.createElement('br'));
-      }
-      bubble.append(sources);
-    }
   </script>
 </body>
 </html>
