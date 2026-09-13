@@ -135,8 +135,33 @@
       const escaped = String(value ?? '').replace(/[&<>\"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[character]));
       return marked.parse(escaped, { breaks: true, gfm: true });
     }
-    document.querySelectorAll('.chat').forEach(item => item.addEventListener('click', () => { document.querySelectorAll('.chat').forEach(c => c.classList.remove('active')); item.classList.add('active'); showToast('已切换到「' + item.querySelector('.label').textContent + '」'); }));
-    document.querySelector('#newChat').addEventListener('click', () => { document.querySelectorAll('.chat').forEach(c => c.classList.remove('active')); showToast('已创建新对话'); document.querySelector('#input').focus(); });
+    let newChatNumber = 1;
+    const initialContent = document.querySelector('#content').innerHTML;
+    document.querySelectorAll('.chat').forEach(item => item.addEventListener('click', () => {
+      document.querySelectorAll('.chat').forEach(c => c.classList.remove('active'));
+      item.classList.add('active');
+      document.querySelector('.crumb strong').textContent = item.querySelector('.label').textContent;
+      showToast('已切换到「' + item.querySelector('.label').textContent + '」');
+    }));
+    document.querySelector('#newChat').addEventListener('click', () => {
+      const item = document.createElement('button');
+      item.className = 'chat active';
+      item.innerHTML = '<span class="dot"></span><span class="label">新对话 ' + newChatNumber++ + '</span><time>刚刚</time>';
+      item.addEventListener('click', () => selectChat(item));
+      document.querySelectorAll('.chat').forEach(c => c.classList.remove('active'));
+      document.querySelector('#chatList').prepend(item);
+      document.querySelector('#content').innerHTML = initialContent;
+      document.querySelector('.crumb strong').textContent = item.querySelector('.label').textContent;
+      document.querySelector('#input').value = '';
+      showToast('已创建新对话');
+      document.querySelector('#input').focus();
+    });
+    function selectChat(item) {
+      document.querySelectorAll('.chat').forEach(c => c.classList.remove('active'));
+      item.classList.add('active');
+      document.querySelector('.crumb strong').textContent = item.querySelector('.label').textContent;
+      showToast('已切换到「' + item.querySelector('.label').textContent + '」');
+    }
     document.querySelector('#send').addEventListener('click', submitRoute);
     document.querySelector('#input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.querySelector('#send').click(); } });
 
