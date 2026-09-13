@@ -100,7 +100,8 @@ export function createPowuServer(options: Options = {}): Server {
         const requestedDownload = new URL(req.url ?? "/", "http://localhost").searchParams.has("download");
         const previewable = /^(image\/|text\/(plain|markdown)$|application\/(pdf|json)$)/i.test(file.mime_type);
         const disposition = requestedDownload || !previewable ? "attachment" : "inline";
-        res.writeHead(200, { "content-type": file.mime_type, "content-length": info.size, "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(file.original_name)}`, "x-content-type-options": "nosniff" });
+        const contentType = /^text\//i.test(file.mime_type) || file.mime_type === "application/json" ? `${file.mime_type}; charset=utf-8` : file.mime_type;
+        res.writeHead(200, { "content-type": contentType, "content-length": info.size, "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(file.original_name)}`, "x-content-type-options": "nosniff" });
         createReadStream(file.path).pipe(res);
       } catch { return send(res, 404, { error: "file_missing" }); }
       return;
