@@ -44,7 +44,11 @@ export class PiChatRuntime implements ChatRuntime {
     });
     const abort = () => agent.abort();
     input.signal.addEventListener("abort", abort, { once: true });
-    try { await agent.prompt(input.message); return agent.state.messages as Transcript; }
+    try {
+      await agent.prompt(input.message);
+      if (agent.state.errorMessage) throw new Error(agent.state.errorMessage);
+      return agent.state.messages as Transcript;
+    }
     finally { input.signal.removeEventListener("abort", abort); unsubscribe(); }
   }
 }
