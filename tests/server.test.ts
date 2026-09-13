@@ -20,6 +20,22 @@ test("chat request rejects missing protocol fields", async t => {
   const response = await fetch(`http://127.0.0.1:${address.port}/api/chat`, { method: "POST", body: JSON.stringify({ message: "hi" }) }); assert.equal(response.status, 400);
 });
 
+test("learning plan page is independently served", async t => {
+  const server = createPowuServer();
+  t.after(() => server.close());
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const response = await fetch(`http://127.0.0.1:${address.port}/learning-plan.html`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /text\/html/);
+  const html = await response.text();
+  assert.match(html, /学习计划/);
+  assert.match(html, /计划 ID/);
+  assert.doesNotMatch(html, /fetch\(/);
+});
+
 test("session endpoints isolate sessions by owner cookie", async t => {
   const owners = new Map<string, Array<{ session_id: string; created_at: string; message_count: number; preview: string | null }>>();
   const store: ChatStore = {

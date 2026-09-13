@@ -24,6 +24,7 @@ export function createPowuServer(options: Options = {}): Server {
     if (path === "/healthz") return send(res, 200, { ok: true });
     if (path === "/readyz") { try { await options.readiness?.(); return send(res, 200, { ok: true }); } catch { return send(res, 503, { ok: false }); } }
     if (path === "/" && req.method === "GET") return serve(res, "../public/index.html", "text/html; charset=utf-8");
+    if (path === "/learning-plan.html" && req.method === "GET") return serve(res, "../public/learning-plan.html", "text/html; charset=utf-8");
     if (path.startsWith("/assets/") && req.method === "GET") { const name = path.slice(8); if (!name || name.includes("..") || name.includes("\\")) return send(res, 404, { error: "not_found" }); const types: Record<string,string> = { ".js":"text/javascript; charset=utf-8", ".gif":"image/gif", ".jpg":"image/jpeg", ".png":"image/png" }; return serve(res, `../public/assets/${name}`, types[name.slice(name.lastIndexOf(".")).toLowerCase()] ?? "application/octet-stream"); }
     if (path === "/api/auth/zhihu/status" && req.method === "GET") {
       const session = oauthSession(req, res);
