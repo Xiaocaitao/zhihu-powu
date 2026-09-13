@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import test from "node:test";
 import { createPowuServer, resetOAuthSessionsForTests } from "../src/server.ts";
@@ -25,6 +26,24 @@ test("画像读取接口返回 Profile Tool 的真实数据和完善度", async 
   assert.equal(body.ok, true);
   assert.equal(body.profile.facts.length, 0);
   assert.equal(body.completion.percentage, 0);
+});
+
+test("career growth endpoint returns saved jobs without selecting one", async t => {
+  const registry = createDefaultCapabilityRegistry();
+  const save = registry.list().find(capability => capability.name === "save_target_job");
+  assert.ok(save);
+  const token = "test-career-owner";
+  const owner = `anonymous:${createHash("sha256").update(token).digest("hex")}`;
+  const saved = await save.execute({ ownerId: owner, requestId: "career-read-test", operationKey: "career-save-test" }, { title: "后端平台工程师", directionCode: "backend", description: "负责 TypeScript 和 PostgreSQL 平台服务开发，维护 REST API。" });
+  assert.equal(saved.ok, true);
+  const server = createPowuServer({ capabilityRegistry: registry }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
+  const cookie = `powu_owner=${token}`;
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/growth/career`, { headers: { cookie } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.jobs.length, 1);
+  assert.equal(body.jobs[0].title, "后端平台工程师");
+  assert.equal(body.plan, null);
 });
 
 test("chat request rejects missing protocol fields", async t => {
