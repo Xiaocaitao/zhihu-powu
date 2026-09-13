@@ -125,6 +125,18 @@ export function createPowuServer(options: Options = {}): Server {
         return send(res, 200, { ok: true, plan: planResult.data ?? null, jobs: (jobsResult.data as { items?: unknown[] } | undefined)?.items ?? [] });
       } catch (error) { console.error("career read failed", error); return send(res, 502, { ok: false, error: "career_read_failed" }); }
     }
+    if (path === "/api/growth/learning" && req.method === "GET") {
+      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "learning_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      const planCapability = options.capabilityRegistry.list().find(capability => capability.name === "get_active_learning_plan");
+      const tasksCapability = options.capabilityRegistry.list().find(capability => capability.name === "get_today_learning_tasks");
+      if (!planCapability || !tasksCapability) return send(res, 503, { ok: false, error: "learning_unavailable" });
+      try {
+        const [planResult, tasksResult] = await Promise.all([planCapability.execute(context, { includeTasks: true }), tasksCapability.execute(context, {})]);
+        if (!planResult.ok || !tasksResult.ok) return send(res, 502, { ok: false, error: "learning_read_failed" });
+        return send(res, 200, { ok: true, plan: planResult.data ?? null, tasks: tasksResult.data ?? [] });
+      } catch (error) { console.error("learning read failed", error); return send(res, 502, { ok: false, error: "learning_read_failed" }); }
+    }
     const knowledgeFile = path.match(/^\/api\/knowledge\/files\/([0-9a-f-]+)$/i)?.[1];
     if (knowledgeFile && req.method === "GET") {
       if (!options.knowledgeStore) return send(res, 503, { error: "knowledge_unavailable" });
