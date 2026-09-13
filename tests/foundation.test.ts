@@ -31,3 +31,12 @@ test("growth prompt injects trusted context without turning routing into keyword
   assert.match(prompt, /先提出最少量的澄清问题/);
   assert.match(prompt, /Profile 摘要：目标方向为空/);
 });
+
+test("growth prompt maps an explicit skills write to learned_content profile facts", async () => {
+  const prompt = await buildPrompt({ message: "记录我已经掌握的 TypeScript 和 PostgreSQL", sessionId: "session-2" });
+  assert.match(prompt, /明确要求“记录\/保存\/更新我掌握的技能、已学习内容或学习经历”/);
+  assert.match(prompt, /save_profile_fact/);
+  assert.match(prompt, /factType 固定为 learned_content/);
+  assert.match(prompt, /value 使用 \{ items: string\[\] \}/);
+  assert.match(prompt, /不要把单纯的技能清单或自我描述改走 Evidence 的 record_learning_evidence/);
+});
