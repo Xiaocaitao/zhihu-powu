@@ -1,6 +1,6 @@
-import { createZhihuTools } from "../src/agent/tools.ts";
-import { ZhihuClient } from "../src/zhihu/client.ts";
-import { safeError, ZhihuError } from "../src/zhihu/errors.ts";
+import { createZhihuTools } from "../src/agent/tools/zhihu.ts";
+import { ZhihuClient } from "../src/integrations/zhihu/client.ts";
+import { safeError, ZhihuError } from "../src/integrations/zhihu/errors.ts";
 
 async function main() {
   const argv = process.argv.slice(2);

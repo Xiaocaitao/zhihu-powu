@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { ZhihuClient } from "../zhihu/client.ts";
-import { safeError } from "../zhihu/errors.ts";
-import { quotaInput, searchGlobalInput, searchZhihuInput } from "../zhihu/schemas.ts";
-import * as s from "../zhihu/api-schemas.ts";
-import type { ApiResult, RequestContext } from "../zhihu/transport.ts";
+import { ZhihuClient } from "../../integrations/zhihu/client.ts";
+import { safeError } from "../../integrations/zhihu/errors.ts";
+import { quotaInput, searchGlobalInput, searchZhihuInput } from "../../integrations/zhihu/schemas.ts";
+import * as s from "../../integrations/zhihu/api-schemas.ts";
+import type { ApiResult, RequestContext } from "../../integrations/zhihu/transport.ts";
 
 export type ToolContext = RequestContext & { confirmed?: boolean };
 type Metadata = { method: "GET" | "POST"; endpoint: string; doc: string; requiresConfirmation?: boolean };
