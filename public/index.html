@@ -139,6 +139,7 @@
       const log = appendProgressMessage();
       const streamBubble = appendMessage('assistant', '');
       streamBubble.classList.add('markdown', 'streaming');
+      streamBubble.innerHTML = '<em>正在整理回答…</em>';
       appendLogLine(log, '正在提交请求');
       try {
         const response = await fetch('/api/routes', {
@@ -154,11 +155,11 @@
         const record = await readRouteStream(response, log, (delta, channel) => {
           if (channel === 'thinking') appendLogLine(log, '正在思考…');
           streamBubble.dataset.raw = (streamBubble.dataset.raw || '') + delta;
-          streamBubble.innerHTML = markdown(streamBubble.dataset.raw);
         });
         streamBubble.parentElement.remove();
         appendRouteMessage(record);
       } catch (error) {
+        streamBubble.parentElement?.remove();
         appendLogLine(log, error instanceof Error ? error.message : '生成失败', true);
         showToast('生成失败');
       } finally {
