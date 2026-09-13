@@ -19,8 +19,15 @@ export function adaptDomainCapabilities(
       if (capability.requiresConfirmation && !(await approve?.(capability.name, args, signal))) {
         return { content: [{ type: "text" as const, text: JSON.stringify({ ok: false, error: { code: "CONFIRMATION_REQUIRED" } }) }], details: { ok: false, error: { code: "CONFIRMATION_REQUIRED" } } };
       }
-      const result = await capability.execute({ ...context, operationKey: `${context.operationKey}:${_id}`, signal }, args);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
+      try {
+        const result = await capability.execute({ ...context, operationKey: `${context.operationKey}:${_id}`, signal }, args);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
+      } catch (error) {
+        signal?.throwIfAborted();
+        const code = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : "INVALID_ARGUMENT";
+        const result = { ok: false, changed: false, domain: capability.name.split("_")[0], status: "rejected", summary: "工具参数或业务状态不合法", error: { code, message: error instanceof Error ? error.message : String(error), retryable: false } };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
+      }
     },
   }));
 }

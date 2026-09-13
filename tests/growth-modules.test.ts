@@ -4,6 +4,8 @@ import { CareerService } from "../src/modules/career/service.ts";
 import { MemoryCareerRepository } from "../src/modules/career/repository.ts";
 import { LearningService } from "../src/modules/learning/service.ts";
 import { MemoryLearningRepository } from "../src/modules/learning/repository.ts";
+import { createCareerCapabilities } from "../src/modules/career/capabilities.ts";
+import { createLearningCapabilities } from "../src/modules/learning/capabilities.ts";
 
 const context = { ownerId: "owner-1", requestId: "req-1", operationKey: "op-1" };
 
@@ -25,4 +27,16 @@ test("Learning 只保存 Agent 提供的结构化计划，不生成默认任务"
   assert.equal(plan.ok, true);
   const data = plan.data as { plan: { stages: Array<{ tasks: unknown[] }> } };
   assert.equal(data.plan.stages[0].tasks.length, 1);
+});
+
+test("Career/Learning 读取工具返回统一能力结果协议", async () => {
+  const career = new CareerService(new MemoryCareerRepository());
+  const careerRead = createCareerCapabilities(career).find(tool => tool.name === "get_career_plan")!;
+  const careerResult = await careerRead.execute(context, {});
+  assert.deepEqual({ ok: careerResult.ok, changed: careerResult.changed, domain: careerResult.domain, status: careerResult.status }, { ok: true, changed: false, domain: "career", status: "read" });
+
+  const learning = new LearningService(new MemoryLearningRepository());
+  const learningRead = createLearningCapabilities(learning).find(tool => tool.name === "get_active_learning_plan")!;
+  const learningResult = await learningRead.execute(context, {});
+  assert.deepEqual({ ok: learningResult.ok, changed: learningResult.changed, domain: learningResult.domain, status: learningResult.status }, { ok: true, changed: false, domain: "learning", status: "read" });
 });
