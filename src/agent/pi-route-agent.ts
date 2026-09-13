@@ -91,7 +91,7 @@ export class PiRouteAgent implements RouteAgent {
     try {
       await agent.prompt(JSON.stringify({ user_request: input }));
       if (signal?.aborted) throw new Error("request aborted");
-      return routePlanSchema.parse(JSON.parse(extractJson(lastAssistantText(agent))));
+      return routePlanSchema.parse(normalizePlan(JSON.parse(extractJson(lastAssistantText(agent)))));
     } finally {
       unsubscribe();
       signal?.removeEventListener("abort", abort);
@@ -193,4 +193,18 @@ function extractJson(text: string): string {
   const end = text.lastIndexOf("}");
   if (start >= 0 && end > start) return text.slice(start, end + 1);
   return text;
+}
+
+function normalizePlan(plan: unknown): unknown {
+  if (!plan || typeof plan !== "object") return plan;
+  const record = plan as { sources?: Array<{ url?: unknown }> };
+  if (!Array.isArray(record.sources)) return plan;
+  return {
+    ...record,
+    sources: record.sources.map(source => {
+      if (typeof source.url !== "string") return source;
+      const markdownUrl = source.url.match(/^\[[^\]]+\]\((https?:\/\/[^)]+)\)$/);
+      return markdownUrl ? { ...source, url: markdownUrl[1] } : source;
+    }),
+  };
 }
