@@ -10,6 +10,15 @@ import type { CapabilityContext } from "../../contracts/capability.ts";
 import type { CapabilityRegistry } from "../tools/registry.ts";
 import { adaptDomainCapabilities } from "../tools/domain-adapter.ts";
 
+export function explicitlyConfirms(toolName: string, message: string): boolean {
+  const text = message.trim();
+  if (!text || /(不确认|暂不|不要|取消|拒绝|先别)/.test(text)) return false;
+  if (toolName === "confirm_learning_plan") return /(确认|同意|激活).*(学习计划|学习规划|该计划)/.test(text);
+  if (toolName === "confirm_career_plan") return /(确认|同意|激活).*(职业规划|职业计划|该规划)/.test(text);
+  if (toolName === "select_target_job") return /(选择|设为目标|确定).*(岗位|职位)/.test(text);
+  return false;
+}
+
 export type PiChatRuntimeOptions = {
   modelId?: string;
   apiKey?: string;
@@ -45,15 +54,19 @@ export class PiChatRuntime implements ChatRuntime {
       requestId: input.context?.requestId,
       ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     }, this.promptContext);
+    // The current chat message is the trusted host's approval signal. Tool
+    // arguments remain model-generated and cannot grant their own approval.
+    const approve = async (toolName: string) => explicitlyConfirms(toolName, input.message);
     const agent = new Agent({
       streamFn: async (model, context, options) => {
         const models = createDoubaoModels(model.id, this.baseUrl);
-        return models.streamSimple(model, context, { ...options, cacheRetention: "none", reasoning: "high", maxRetries: 1, maxRetryDelayMs: 3000 });
+        return models.streamSimple(model, context, { ...options, cacheRetention: "none", reasoning: "low", maxRetries: 1, maxRetryDelayMs: 3000 });
       },
       getApiKey: () => this.apiKey,
-      initialState: { systemPrompt, model: this.model, thinkingLevel: "high", messages: input.history as AgentMessage[], tools: [
+      initialState: { systemPrompt, model: this.model, thinkingLevel: "low", messages: input.history as AgentMessage[], tools: [
+        // Zhihu uploads/OAuth keep their separate trusted-host approval path.
         ...adaptTools(createZhihuTools(this.client)),
-        ...(input.context && this.capabilityRegistry ? adaptDomainCapabilities(this.capabilityRegistry.forContext(input.context), input.context) : []),
+        ...(input.context && this.capabilityRegistry ? adaptDomainCapabilities(this.capabilityRegistry.forContext(input.context), input.context, approve) : []),
       ] },
       sessionId: input.sessionId,
       maxRetryDelayMs: 3000,
