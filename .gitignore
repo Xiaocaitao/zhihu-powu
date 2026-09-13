@@ -3,4 +3,5 @@ node_modules/
 .env.*
 !.env.example
 coverage/
+uploads/
 .DS_Store

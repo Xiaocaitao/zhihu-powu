@@ -37,12 +37,13 @@ export class PiChatRuntime implements ChatRuntime {
     this.capabilityRegistry = options.capabilityRegistry;
     this.promptContext = options.promptContext;
   }
-  async run(input: { message: string; sessionId: string; history: Transcript; signal: AbortSignal; context?: CapabilityContext }, emit: Emit): Promise<Transcript> {
+  async run(input: { message: string; sessionId: string; history: Transcript; signal: AbortSignal; attachments?: import("../../modules/chat/contracts.ts").ChatAttachment[]; context?: CapabilityContext }, emit: Emit): Promise<Transcript> {
     const systemPrompt = await buildPrompt({
       message: input.message,
       sessionId: input.sessionId,
       ownerId: input.context?.ownerId,
       requestId: input.context?.requestId,
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     }, this.promptContext);
     const agent = new Agent({
       streamFn: async (model, context, options) => {
