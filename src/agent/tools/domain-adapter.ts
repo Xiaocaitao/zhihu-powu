@@ -17,7 +17,8 @@ export function adaptDomainCapabilities(
     execute: async (_id, args, signal) => {
       signal?.throwIfAborted();
       if (capability.requiresConfirmation && !(await approve?.(capability.name, args, signal))) {
-        return { content: [{ type: "text" as const, text: JSON.stringify({ ok: false, error: { code: "CONFIRMATION_REQUIRED" } }) }], details: { ok: false, error: { code: "CONFIRMATION_REQUIRED" } } };
+        const result = { ok: false, changed: false, domain: "agent", status: "confirmation_required", summary: "这项操作需要用户明确确认后才能执行", error: { code: "CONFIRMATION_REQUIRED", message: "请明确回复确认后再执行", retryable: false } };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
       }
       try {
         const result = await capability.execute({ ...context, operationKey: `${context.operationKey}:${_id}`, signal }, args);
