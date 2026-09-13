@@ -5,7 +5,6 @@ import { createPowuServer } from "../src/server.ts";
 import { ChatService } from "../src/modules/chat/service.ts";
 import type { ChatStore, ChatRuntime } from "../src/modules/chat/contracts.ts";
 import type { KnowledgeStore } from "../src/modules/knowledge/contracts.ts";
-import { createDefaultCapabilityRegistry } from "../src/app/composition-root.ts";
 
 test("chat endpoint forwards raw input and streams text events", async t => {
   const store: ChatStore = { async create() { return { sessionId: "00000000-0000-4000-8000-000000000001", createdAt: new Date().toISOString() }; }, async list() { return []; }, async begin(_owner, input) { return { sessionId: input.session_id ?? "00000000-0000-4000-8000-000000000001", history: [], finish: async () => {}, release: async () => {} }; }, async get() { return []; } };
@@ -17,15 +16,10 @@ test("chat endpoint forwards raw input and streams text events", async t => {
   const retired = await fetch(`http://127.0.0.1:${address.port}/api/routes`, { method: "POST", body: "{}" }); assert.equal(retired.status, 410);
 });
 
-test("画像读取接口返回 Profile Tool 的真实数据和完善度", async t => {
-  const chatStore: ChatStore = { async create() { return { sessionId: "00000000-0000-4000-8000-000000000002", createdAt: new Date().toISOString() }; }, async list() { return []; }, async begin() { throw new Error("unused"); }, async get() { return []; } };
-  const server = createPowuServer({ chatService: new ChatService(chatStore, { run: async () => [] }), capabilityRegistry: createDefaultCapabilityRegistry() }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
+test("growth profile service route is not exposed", async t => {
+  const server = createPowuServer({ chatService: new ChatService({ create: async () => ({ sessionId: "00000000-0000-4000-8000-000000000001", createdAt: new Date().toISOString() }), list: async () => [], begin: async () => { throw new Error("unused"); }, get: async () => null }, { run: async () => [] }) }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
   const response = await fetch(`http://127.0.0.1:${address.port}/api/growth/profile`);
-  assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.ok, true);
-  assert.equal(body.profile.facts.length, 0);
-  assert.equal(body.completion.percentage, 0);
+  assert.equal(response.status, 404);
 });
 
 test("chat request rejects missing protocol fields", async t => {

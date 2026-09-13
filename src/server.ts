@@ -97,18 +97,6 @@ export function createPowuServer(options: Options = {}): Server {
         return send(res, 201, { files });
       } catch (error) { return send(res, error instanceof ChatError ? error.status : 400, { ok: false, error: error instanceof ChatError ? error.message : "invalid_upload" }); }
     }
-    if (path === "/api/growth/profile" && req.method === "GET") {
-      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "growth_unavailable" });
-      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
-      const profile = options.capabilityRegistry.list().find(capability => capability.name === "get_user_profile");
-      const completion = options.capabilityRegistry.list().find(capability => capability.name === "get_profile_completion");
-      if (!profile || !completion) return send(res, 503, { ok: false, error: "profile_unavailable" });
-      try {
-        const [profileResult, completionResult] = await Promise.all([profile.execute(context, {}), completion.execute(context, {})]);
-        if (!profileResult.ok || !completionResult.ok) return send(res, 502, { ok: false, error: "profile_read_failed" });
-        return send(res, 200, { ok: true, profile: profileResult.data, completion: completionResult.data });
-      } catch (error) { console.error("profile read failed", error); return send(res, 502, { ok: false, error: "profile_read_failed" }); }
-    }
     const knowledgeFile = path.match(/^\/api\/knowledge\/files\/([0-9a-f-]+)$/i)?.[1];
     if (knowledgeFile && req.method === "GET") {
       if (!options.knowledgeStore) return send(res, 503, { error: "knowledge_unavailable" });
