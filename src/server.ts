@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { ZodError } from "zod";
@@ -9,8 +9,9 @@ import { ChatService } from "./modules/chat/service.ts";
 import { chatRequestSchema, ChatError } from "./modules/chat/contracts.ts";
 import { PiChatRuntime } from "./agent/runtime/pi-chat-runtime.ts";
 import { createZhihuOAuth, type ZhihuOAuthProfile, type ZhihuOAuthProvider } from "./integrations/zhihu/oauth.ts";
+import { matchApplicationRoute, type ApplicationRoute } from "./http/routes.ts";
 
-type Options = { chatService?: ChatService; readiness?: () => Promise<void>; routeService?: unknown; oauth?: ZhihuOAuthProvider };
+type Options = { chatService?: ChatService; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider };
 const owners = new Map<string, string>();
 type OAuthSession = { state?: string; stateVerified?: boolean; accessToken?: string; expiresAt?: number; profile?: ZhihuOAuthProfile; error?: { code: string; message: string } };
 const oauthSessions = new Map<string, OAuthSession>();
@@ -84,6 +85,26 @@ export function createPowuServer(options: Options = {}): Server {
     }
     const session = path.match(/^\/api\/sessions\/([0-9a-f-]+)$/i)?.[1];
     if (session && req.method === "GET") { if (!options.chatService) return send(res, 503, { error: "chat_unavailable" }); const runs = await options.chatService.get(authenticatedOwner(req, res), session); return send(res, runs ? 200 : 404, runs ?? { error: "not_found" }); }
+    const applicationRoute = matchApplicationRoute(options.applicationRoutes ?? [], req.method ?? "GET", path);
+    if (applicationRoute) {
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      req.once("aborted", cancel); res.once("close", cancel);
+      try {
+        await applicationRoute.route.handle({
+          request: req,
+          response: res,
+          params: applicationRoute.params,
+          context: { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID(), signal: controller.signal },
+        });
+      } catch (error) {
+        if (!res.headersSent) send(res, 500, { ok: false, error: "application_route_failed" });
+        else if (!res.writableEnded) res.end();
+      } finally {
+        req.removeListener("aborted", cancel); res.removeListener("close", cancel);
+      }
+      return;
+    }
     return send(res, 404, { ok: false, error: "not_found" });
 
     async function chat(request: IncomingMessage, response: ServerResponse) {
