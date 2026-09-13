@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import test from "node:test";
-import { createPowuServer } from "../src/server.ts";
+import { createPowuServer, resetOAuthSessionsForTests } from "../src/server.ts";
 import { ChatService } from "../src/modules/chat/service.ts";
 import type { ChatStore, ChatRuntime } from "../src/modules/chat/contracts.ts";
 import type { KnowledgeStore } from "../src/modules/knowledge/contracts.ts";
@@ -80,6 +80,34 @@ test("authenticated sessions use the Zhihu uid instead of the anonymous cookie o
   const bobCookie = await login("bob"); const bobList = await fetch(`${base}/api/sessions`, { headers: { cookie: bobCookie } }); assert.deepEqual((await bobList.json()).sessions, []);
   const bobHidden = await fetch(`${base}/api/sessions/${aliceSessionId}`, { headers: { cookie: bobCookie } }); assert.equal(bobHidden.status, 404);
   const aliceAgain = await login("alice"); const aliceList = await fetch(`${base}/api/sessions`, { headers: { cookie: aliceAgain } }); assert.equal((await aliceList.json()).sessions.length, 2);
+});
+
+test("signed OAuth cookie keeps the authenticated owner after a server restart", async t => {
+  const sessions = new Map<string, Array<{ session_id: string; created_at: string; message_count: number; preview: string | null }>>();
+  const store: ChatStore = {
+    async create(owner) { const session = { session_id: "00000000-0000-4000-8000-000000000012", created_at: new Date().toISOString(), message_count: 0, preview: null }; sessions.set(owner, [ ...(sessions.get(owner) ?? []), session ]); return { sessionId: session.session_id, createdAt: session.created_at }; },
+    async list(owner) { return sessions.get(owner) ?? []; },
+    async begin() { throw new Error("unused"); },
+    async get() { return null; },
+  };
+  const oauth = {
+    authorizationUrl: (state: string) => `https://example.test/authorize?state=${encodeURIComponent(state)}`,
+    exchangeCode: async (code: string) => ({ accessToken: `token-${code}`, expiresAt: Date.now() + 60_000 }),
+    getUserInfo: async (token: string) => ({ uid: token.slice("token-".length), fullname: "Alice" }),
+  };
+  const open = async () => { const server = createPowuServer({ chatService: new ChatService(store, { run: async () => [] }), oauth }); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string"); return { server, base: `http://127.0.0.1:${address.port}` }; };
+  const first = await open();
+  const start = await fetch(`${first.base}/auth/zhihu/start`, { redirect: "manual" });
+  const ownerCookie = start.headers.get("set-cookie")?.split(";", 1)[0]; assert.ok(ownerCookie);
+  const callback = await fetch(`${first.base}/auth/zhihu/callback?authorization_code=alice`, { headers: { cookie: ownerCookie }, redirect: "manual" });
+  const callbackCookies = callback.headers.get("set-cookie")?.split(/,\s*(?=[^;]+=)/).map(value => value.split(";", 1)[0]) ?? [];
+  const cookie = [...new Set([ownerCookie, ...callbackCookies])].join("; ");
+  const created = await fetch(`${first.base}/api/sessions`, { method: "POST", headers: { cookie } }); assert.equal(created.status, 201);
+  await new Promise<void>(resolve => first.server.close(() => resolve()));
+  resetOAuthSessionsForTests();
+  const second = await open(); t.after(() => second.server.close());
+  const listed = await fetch(`${second.base}/api/sessions`, { headers: { cookie } });
+  assert.equal((await listed.json()).sessions.length, 1);
 });
 
 test("knowledge files support multipart upload, owner isolation and inline preview", async t => {
