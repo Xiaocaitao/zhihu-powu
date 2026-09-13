@@ -19,3 +19,6 @@ node --test --experimental-strip-types src/modules/profile/tests/profile.test.ts
 
 - Service 写入校验测评来源证据引用、文本/列表非空和每周时间范围。
 - 当前单元测试共 7 项通过。
+
+- 分区查询仅裁剪返回事实，缺失字段仍按完整画像计算；支持隐藏缺失字段。
+- 目标方向更新支持 expectedVersion 冲突校验；当前单元测试共 10 项通过。

@@ -19,3 +19,9 @@ test('四个 Agent Tool 均委托 Service', async()=>{const calls:string[]=[]; c
 
 test('校验测评来源必须带证据引用', async()=>{const {service}=setup(); await assert.rejects(()=>service.saveProfileFact({ownerId:'u1'},{factType:'major',value:{text:'CS'},source:'assessment'}),/INVALID_ARGUMENT/);});
 test('每周时间不允许为负数', async()=>{const {service}=setup(); await assert.rejects(()=>service.saveProfileFact({ownerId:'u1'},{factType:'weekly_time',value:{hours:-1},source:'user_input'}),/INVALID_ARGUMENT/);});
+
+test('分区查询只返回指定分区但缺失字段仍按完整画像计算', async()=>{const {service}=setup(); const ctx={ownerId:'u1'}; await service.saveProfileFact(ctx,{factType:'major',value:{text:'CS'},source:'user_input'}); await service.saveProfileFact(ctx,{factType:'school',value:{text:'甲大学'},source:'user_input'}); const profile=await service.getUserProfile(ctx,{sections:['identity']}); assert.equal(profile?.facts.length,2); assert.equal(profile?.missingFields.length,7);});
+
+test('完善度查询可隐藏缺失字段', async()=>{const {service}=setup(); const result=await service.getProfileCompletion({ownerId:'u1'},{includeMissingFields:false}); assert.equal(result.missingFields.length,0); assert.equal(result.percentage,0);});
+
+test('目标方向版本冲突会拒绝过期更新', async()=>{const {service}=setup(); const ctx={ownerId:'u1'}; await service.updateUserGoal(ctx,{direction:'前端'}); await assert.rejects(()=>service.updateUserGoal(ctx,{direction:'后端',expectedVersion:9}),/VERSION_CONFLICT/);});
