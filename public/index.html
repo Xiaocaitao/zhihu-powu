@@ -185,7 +185,12 @@
             }),
           });
           const record = await response.json();
-          if (!response.ok) throw new Error(record.error || "生成失败，请稍后重试");
+          if (!response.ok) {
+            const issues = Array.isArray(record.issues)
+              ? record.issues.map((issue) => `${(issue.path || []).join(".") || "request"}: ${issue.message}`).join("；")
+              : "";
+            throw new Error(issues || record.error || "生成失败，请稍后重试");
+          }
           render(record);
           status.textContent = "路线生成完成。可以从第 1 天开始。";
         } catch (error) {
