@@ -45,12 +45,12 @@
     .avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; background: #25496e; font-size: 12px; font-weight: 700; }
     .profile strong { display: block; font-size: 12px; }
     .profile span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
-    .main { position: relative; display: flex; flex-direction: column; min-width: 0; background: radial-gradient(circle at 85% 8%, #f5faff 0, transparent 34%), #fff; }
+    .main { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: radial-gradient(circle at 85% 8%, #f5faff 0, transparent 34%), #fff; }
     .topbar { display: flex; align-items: center; justify-content: space-between; height: 62px; padding: 0 34px; border-bottom: 1px solid rgba(231,237,245,.8); }
     .crumb { display: flex; align-items: center; gap: 9px; font-size: 13px; color: #9aa8ba; }
     .crumb strong { color: var(--ink); font-size: 14px; }
     .crumb .badge { padding: 4px 8px; border-radius: 99px; color: #2673cf; background: #eaf3ff; font-size: 11px; font-weight: 650; }
-    .content { width: min(900px, calc(100% - 80px)); flex: 1; margin: 0 auto; padding: 50px 0 170px; overflow: auto; }
+    .content { width: min(900px, calc(100% - 80px)); min-height: 0; flex: 1; margin: 0 auto; padding: 50px 0 170px; overflow-y: auto; overflow-x: hidden; }
     .welcome { display: flex; align-items: flex-start; gap: 15px; margin-bottom: 40px; }
     .welcome-mark { width: 42px; height: 42px; object-fit: contain; margin-top: 2px; }
     .eyebrow { margin: 0 0 8px; color: var(--blue); font-size: 11px; font-weight: 750; letter-spacing: .12em; }
@@ -137,6 +137,8 @@
       input.value = '';
       send.disabled = true;
       const log = appendProgressMessage();
+      const streamBubble = appendMessage('assistant', '');
+      streamBubble.classList.add('markdown', 'streaming');
       appendLogLine(log, '正在提交请求');
       try {
         const response = await fetch('/api/routes', {
@@ -149,7 +151,11 @@
           const details = error.issues?.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('；');
           throw new Error(details || error.error || '请求失败，请稍后重试');
         }
-        const record = await readRouteStream(response, log);
+        const record = await readRouteStream(response, log, delta => {
+          streamBubble.dataset.raw = (streamBubble.dataset.raw || '') + delta;
+          streamBubble.innerHTML = markdown(streamBubble.dataset.raw);
+        });
+        streamBubble.parentElement.remove();
         appendRouteMessage(record);
       } catch (error) {
         appendLogLine(log, error instanceof Error ? error.message : '生成失败', true);
@@ -203,7 +209,7 @@
       log.parentElement.parentElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
 
-    async function readRouteStream(response, log) {
+    async function readRouteStream(response, log, onDelta) {
       if (!response.body) throw new Error('浏览器不支持 SSE 流式响应');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -219,6 +225,7 @@
           const event = parseSseBlock(block);
           if (!event) continue;
           if (event.name === 'progress') appendLogLine(log, event.data.message || '处理中');
+          if (event.name === 'delta') onDelta?.(event.data.delta || '');
           if (event.name === 'complete') { record = event.data; appendLogLine(log, '完成，路线已保存', false); log.lastElementChild.classList.add('done'); }
           if (event.name === 'error') throw new Error(event.data.error || '路线生成失败');
         }
@@ -226,6 +233,7 @@
       }
       if (buffer.trim()) {
         const event = parseSseBlock(buffer);
+        if (event?.name === 'delta') onDelta?.(event.data.delta || '');
         if (event?.name === 'complete') record = event.data;
         if (event?.name === 'error') throw new Error(event.data.error || '路线生成失败');
       }
