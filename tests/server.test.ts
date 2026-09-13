@@ -4,6 +4,7 @@ import test from "node:test";
 import { createPowuServer } from "../src/server.ts";
 import { ChatService } from "../src/modules/chat/service.ts";
 import type { ChatStore, ChatRuntime } from "../src/modules/chat/contracts.ts";
+import type { KnowledgeStore } from "../src/modules/knowledge/contracts.ts";
 
 test("chat endpoint forwards raw input and streams text events", async t => {
   const store: ChatStore = { async create() { return { sessionId: "00000000-0000-4000-8000-000000000001", createdAt: new Date().toISOString() }; }, async list() { return []; }, async begin(_owner, input) { return { sessionId: input.session_id ?? "00000000-0000-4000-8000-000000000001", history: [], finish: async () => {}, release: async () => {} }; }, async get() { return []; } };
@@ -55,4 +56,32 @@ test("authenticated sessions use the Zhihu uid instead of the anonymous cookie o
   const bobCookie = await login("bob"); const bobList = await fetch(`${base}/api/sessions`, { headers: { cookie: bobCookie } }); assert.deepEqual((await bobList.json()).sessions, []);
   const bobHidden = await fetch(`${base}/api/sessions/${aliceSessionId}`, { headers: { cookie: bobCookie } }); assert.equal(bobHidden.status, 404);
   const aliceAgain = await login("alice"); const aliceList = await fetch(`${base}/api/sessions`, { headers: { cookie: aliceAgain } }); assert.equal((await aliceList.json()).sessions.length, 2);
+});
+
+test("knowledge files support multipart upload, owner isolation and inline preview", async t => {
+  const saved = new Map<string, { id: string; original_name: string; mime_type: string; size_bytes: number; url: string; created_at: string }[]>();
+  const store: KnowledgeStore = {
+    async save(owner, upload) { const file = { id: "00000000-0000-4000-8000-000000000099", original_name: upload.filename, mime_type: upload.contentType, size_bytes: upload.data.byteLength, url: "/api/knowledge/files/00000000-0000-4000-8000-000000000099", created_at: new Date().toISOString() }; saved.set(owner, [...(saved.get(owner) ?? []), file]); return file; },
+    async list(owner) { return saved.get(owner) ?? []; },
+    async get(owner, id) { const file = saved.get(owner)?.find(item => item.id === id); return file ? { ...file, path: "/dev/null" } : null; },
+  };
+  const server = createPowuServer({ knowledgeStore: store }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
+  const body = new FormData(); body.append("file", new Blob(["hello"], { type: "text/plain" }), "notes.txt");
+  const uploaded = await fetch(`http://127.0.0.1:${address.port}/api/knowledge/files`, { method: "POST", body }); assert.equal(uploaded.status, 201);
+  const cookie = uploaded.headers.get("set-cookie")?.split(";", 1)[0]; assert.ok(cookie);
+  const listed = await fetch(`http://127.0.0.1:${address.port}/api/knowledge/files`, { headers: { cookie } }); assert.equal((await listed.json()).files.length, 1);
+  const preview = await fetch(`http://127.0.0.1:${address.port}/api/knowledge/files/00000000-0000-4000-8000-000000000099`, { headers: { cookie } }); assert.equal(preview.status, 200); assert.equal(preview.headers.get("x-content-type-options"), "nosniff");
+  const hidden = await fetch(`http://127.0.0.1:${address.port}/api/knowledge/files/00000000-0000-4000-8000-000000000099`); assert.equal(hidden.status, 404);
+});
+
+test("chat multipart attachments are saved before the Agent run", async t => {
+  const seen: string[] = [];
+  const store: KnowledgeStore = {
+    async save(_owner, upload) { seen.push(upload.filename); return { id: "00000000-0000-4000-8000-000000000098", original_name: upload.filename, mime_type: upload.contentType, size_bytes: upload.data.byteLength, url: "/api/knowledge/files/00000000-0000-4000-8000-000000000098", created_at: new Date().toISOString() }; },
+    async list() { return []; }, async get() { return null; },
+  };
+  const chatStore: ChatStore = { async create() { return { sessionId: "00000000-0000-4000-8000-000000000001", createdAt: new Date().toISOString() }; }, async list() { return []; }, async begin(_owner, input) { return { sessionId: input.session_id ?? "00000000-0000-4000-8000-000000000001", history: [], finish: async () => {}, release: async () => {} }; }, async get() { return []; } };
+  const server = createPowuServer({ knowledgeStore: store, chatService: new ChatService(chatStore, { async run(_input, emit) { await emit({ type: "text_delta", delta: "ok" }); return []; } }) }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
+  const body = new FormData(); body.set("message", "请总结"); body.set("request_id", "00000000-0000-4000-8000-000000000097"); body.append("file", new Blob(["内容"], { type: "text/plain" }), "资料.txt");
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/chat`, { method: "POST", body }); assert.equal(response.status, 200); const text = await response.text(); assert.match(text, /event: attachments/); assert.match(text, /资料/); assert.deepEqual(seen, ["资料.txt"]);
 });

@@ -21,7 +21,7 @@ export class ChatService {
       if (JSON.stringify(run.history).length > 2_000_000) throw new ChatError("context_limit", 413);
       await send({ type: "session", session_id: run.sessionId, request_id: input.request_id });
       const operationKey = randomUUID();
-      const history = await this.runtime.run({ message: input.message, sessionId: run.sessionId, history: run.history, signal, context: { ownerId: owner, sessionId: run.sessionId, requestId: input.request_id, operationKey } }, send);
+      const history = await this.runtime.run({ message: input.message, sessionId: run.sessionId, history: run.history, signal, attachments: input.attachments, context: { ownerId: owner, sessionId: run.sessionId, requestId: input.request_id, operationKey } }, send);
       signal.throwIfAborted();
       await run.finish("completed", events, history);
     } catch (error) {

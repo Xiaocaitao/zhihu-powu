@@ -3,6 +3,7 @@ import test from "node:test";
 import { CapabilityRegistry } from "../src/agent/tools/registry.ts";
 import { matchApplicationRoute } from "../src/http/routes.ts";
 import { createLlmInvoker } from "../src/llm/invoker.ts";
+import { buildPrompt } from "../src/agent/prompts/system.ts";
 
 test("capability registry rejects duplicate names and route matching exposes params", async () => {
   const capability = { name: "demo", description: "demo", inputSchema: {}, execute: async () => ({ ok: true, changed: false, domain: "demo", status: "read" as const, summary: "ok" }) };
@@ -19,4 +20,14 @@ test("configured LLM invoker forwards structured input and cancellation", async 
   const result = await invoker.generateStructured<{ answer: string }>({ systemPrompt: "s", userInput: { x: 1 }, outputSchema: {}, });
   assert.deepEqual(result, { answer: "ok" });
   assert.equal((received as { systemPrompt: string }).systemPrompt, "s");
+});
+
+test("growth prompt injects trusted context without turning routing into keyword rules", async () => {
+  const prompt = await buildPrompt({ message: "帮我做职业规划", sessionId: "session-1", ownerId: "owner-1", requestId: "request-1" }, async input => {
+    assert.deepEqual(input, { message: "帮我做职业规划", sessionId: "session-1", ownerId: "owner-1", requestId: "request-1" });
+    return "Profile 摘要：目标方向为空，已学内容为 Java。";
+  });
+  assert.match(prompt, /先理解用户当前目标/);
+  assert.match(prompt, /先提出最少量的澄清问题/);
+  assert.match(prompt, /Profile 摘要：目标方向为空/);
 });
