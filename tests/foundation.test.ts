@@ -56,3 +56,11 @@ test("growth prompt defines the learning assistant chain", async () => {
   assert.match(prompt, /先调用 update_learning_task 更新状态/);
   assert.match(prompt, /同一 taskId 调用 record_learning_evidence/);
 });
+
+test("learning workflow derives a guarded stage from user intent", async () => {
+  const { deriveLearningWorkflowState, workflowHint } = await import("../src/agent/workflows/learning-workflow.ts");
+  assert.equal(deriveLearningWorkflowState("我要学习 PostgreSQL 性能优化"), "goal_detected");
+  assert.equal(deriveLearningWorkflowState("请生成两周 trial 学习计划草案并保存"), "draft_ready");
+  assert.equal(deriveLearningWorkflowState("确认激活这份学习计划"), "active");
+  assert.match(workflowHint("awaiting_confirmation"), /不要调用确认或其他写入工具/);
+});
