@@ -132,3 +132,8 @@
 - 按 Profile 查询允许返回空画像的契约，在主组合查询适配层增加空画像默认快照。
 - 为 Profile 写入后读取测试增加非空断言，消除严格 TypeScript 下的可空访问错误。
 - Profile 单元测试 19 项通过；完整类型检查需 CI 安装 PostgreSQL 类型依赖后执行。
+
+## 2026-09-14 · Server 空画像契约测试修复
+
+- 修正 `/api/growth/profile` 空画像测试：无画像时按 Profile 契约断言 `profile: null`，完善度仍返回 0。
+- 避免测试错误地把空画像当作包含 `facts` 的对象。
