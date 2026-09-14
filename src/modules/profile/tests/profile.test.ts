@@ -21,3 +21,6 @@ test('目标方向版本冲突',async()=>{const {service}=setup();await service.
 test('相同事实重复提交不递增版本',async()=>{const {service}=setup();const first=await service.saveProfileFact(cmd({factType:'major',value:{text:'CS'},source:'user_input'}));const second=await service.saveProfileFact({...cmd({factType:'major',value:{text:'CS'},source:'user_input'}),expectedVersion:1});assert.equal(first.version,1);assert.equal(second.changed,false);assert.equal(second.version,1)});
 test('相同目标重复提交不递增版本',async()=>{const {service}=setup();const first=await service.updateUserGoal(cmd({direction:'前端'}));const second=await service.updateUserGoal({...cmd({direction:'前端'}),expectedVersion:1});assert.equal(first.version,1);assert.equal(second.changed,false);assert.equal(second.version,1)});
 
+
+
+test('明确暂未确定目标方向计入完善度',async()=>{const {service}=setup();await service.updateUserGoal(cmd({direction:null}));const r=await service.getProfileCompletion(ctx(),{includeMissingFields:true});assert.equal(r.percentage,11);assert.equal(r.missingFields.includes('target_direction'),false)});
