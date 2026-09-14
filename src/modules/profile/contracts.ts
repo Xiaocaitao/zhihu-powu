@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CapabilityResult } from "../../contracts/capability.ts";
 
 export const profileSections = ["identity", "background", "interests", "availability", "preferences", "goals"] as const;
 export type ProfileSection = (typeof profileSections)[number];
@@ -19,7 +20,7 @@ export type ProfileFactPayload =
 export interface ProfileFactDTO {
   id: string;
   factType: ProfileFactType;
-  section: Exclude<ProfileSection, "goals">;
+  section: ProfileSection;
   value: ProfileFactPayload["value"];
   source: ProfileFactSource;
   isConfirmed: boolean;
@@ -53,16 +54,7 @@ export interface ProfileCompletionDTO {
   ruleVersion: string;
 }
 
-export interface ProfileWriteResult<TFact extends ProfileFactDTO | undefined = ProfileFactDTO | undefined> {
-  ok: boolean;
-  changed: boolean;
-  domain: "profile";
-  data?: { fact?: TFact; goal?: UserGoalDTO };
-  entityId?: string;
-  version?: number;
-  status?: string;
-  summary?: string;
-}
+export type ProfileWriteResult<TFact extends ProfileFactDTO | undefined = ProfileFactDTO | undefined> = CapabilityResult<{ fact?: TFact; goal?: UserGoalDTO }>;
 
 export interface GetUserProfileInput { sections?: ProfileSection[] }
 export interface GetProfileCompletionInput { includeMissingFields?: boolean }
