@@ -52,3 +52,9 @@
 - 明确 `assessment` 仅允许写入 `current_baseline`，且必须携带证据引用。
 - 拒绝用户输入为其他事实伪造测评来源，拒绝非测评来源携带测评证据引用。
 - 新增来源边界测试；Profile 独立类型检查通过，11 项单元测试全部通过。
+
+## 2026-09-14 · 外部查询上下文对齐 main
+
+- Profile 查询接口改用 main 公共 `ModuleContext`，不再要求跨模块调用方提供仅命令侧需要的 `operationKey`。
+- 写入命令继续使用 main 的 `CapabilityContext` 与 `DomainCommand`，保持可信上下文和幂等键边界。
+- 独立类型检查通过，11 项单元测试全部通过。

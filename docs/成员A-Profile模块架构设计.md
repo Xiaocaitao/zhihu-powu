@@ -661,3 +661,47 @@ Profile 写入成功后，页面应通过主应用已有的成长空间查询链
 ### 6.7 main 增量后的验证要求
 
 除本文件原有 Profile 验收项外，必须补充验证：公共 `DomainCommand` 和 `CapabilityResult` 兼容、四个 Tool 统一注册可用、可信 owner/session/request 上下文隔离、保存后服务端回读、`domain_update` 后页面刷新，以及不修改队长维护目录。
+
+## 七、外部契约以 main 分支为最终准则
+
+本节为本架构文档的最高优先级解释约定。
+
+### 7.1 外部交互的唯一基准
+
+凡涉及项目外部或跨模块交互的内容，均以当前 `main` 分支实际提供的项目级契约、类型、运行时协议和接口行为为准，包括但不限于：
+
+- `ModuleContext`、`CapabilityContext`、`DomainCommand`、`CapabilityResult`、`DomainCapability`；
+- ProfileApplication 的跨模块调用方式；
+- Agent Tool 的注册、执行、输入 Schema 和公共返回结构；
+- ownerId、sessionId、requestId、operationKey 和幂等键的注入方式；
+- 公共错误码、状态枚举、HTTP/SSE/domain_update 联动协议；
+- 首页、成长空间和其他模块读取 Profile 的数据交接格式。
+
+架构文档中的外部接口描述如果与当前 main 不一致，代码实现必须服从 main，不得以本架构文档覆盖或修改 main 的公共契约。
+
+### 7.2 架构文档的适用范围
+
+本架构文档继续作为 Profile 的完整业务主线，负责规定：
+
+- Profile 的职责边界；
+- 内部领域字段、事实分类和目标语义；
+- 画像完善度规则；
+- Profile 专属数据表和内部持久化要求；
+- 兼容旧调用格式的适配策略；
+- 不突破 main 外部契约前提下的内部实现约束。
+
+这些内部设计可以通过兼容层适配到 main 的外部接口，但不得把内部领域结构直接扩展为新的项目级契约。
+
+### 7.3 兼容层原则
+
+当架构文档中的 Profile 领域输入与 main 当前调用格式不一致时：
+
+1. 对外暴露 main 要求的格式；
+2. 在 Profile 适配层识别并转换架构文档所需的内部格式；
+3. Service 内部使用统一的 Profile 领域模型；
+4. 返回结果重新映射为 main 要求的公共结果结构；
+5. 兼容层不得改变 main 的字段含义、错误码、状态或调用责任。
+
+### 7.4 变更和审计
+
+每次同步 main 后，必须重新检查 Profile 的外部接口和联动协议。若 main 新增或改变公共契约，先更新本文件的增量说明和兼容策略，再修改代码。未经确认不得把架构文档中的 Profile 专属定义提升为项目级公共契约。
