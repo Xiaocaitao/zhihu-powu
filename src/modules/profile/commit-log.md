@@ -46,3 +46,9 @@
 - 在 Profile Tool 适配层兼容 main 历史调用使用的 `{ direction }`，统一转换后再进入 DomainCommand 和 Service。
 - 保持公共 CapabilityResult、可信上下文和版本校验语义不变。
 - Profile 独立类型检查通过，10 项单元测试全部通过。
+
+## 2026-09-14 · 事实来源边界校正
+
+- 明确 `assessment` 仅允许写入 `current_baseline`，且必须携带证据引用。
+- 拒绝用户输入为其他事实伪造测评来源，拒绝非测评来源携带测评证据引用。
+- 新增来源边界测试；Profile 独立类型检查通过，11 项单元测试全部通过。
