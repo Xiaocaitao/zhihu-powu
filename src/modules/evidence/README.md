@@ -13,7 +13,7 @@
 - `capabilities.ts`：13 项工具定义，只做入参校验与委托。
 - `generation.ts`：生成端口、模型适配器、结果校验（含引用必须可追溯）与确定性测试替身。
 - `defaults.ts`：模块组装入口；`pagination.ts`：游标与时区周范围。
-- `src/db/migrations/003-evidence.sql`、`007`、`008`、`009`、`010`：模块迁移文件。
+- `src/db/migrations/003-evidence.sql`、`008`、`009`、`010`、`011`：模块迁移文件（编号已避开 main 新增的学习计划迁移）。
 
 13 项能力已通过 composition-root 接入主 Agent 与 HTTP，主原型两个页面调用同一批能力。逐项落地证据见 docs/Evidence原始需求落地核验.md；其中「学习计划的权威历史事件」「阶段测试结果查询」两条依赖来源模块，目前如实返回覆盖缺失，不伪造历史。
 

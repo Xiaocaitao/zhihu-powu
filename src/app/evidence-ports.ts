@@ -5,7 +5,16 @@ import type { ProfileApplication } from "../modules/profile/service.ts";
 import type { KnowledgeStore } from "../modules/knowledge/contracts.ts";
 import { KnowledgeMaterialReader } from "../modules/knowledge/material-reader.ts";
 import type { SharedSkills } from "../modules/skills/service.ts";
-import { unavailable, type Coverage, type EvidencePorts, type ExternalResult } from "../modules/evidence/ports.ts";
+import { unavailable, type Coverage, type EvidencePorts, type ExternalResult, type SourceChange } from "../modules/evidence/ports.ts";
+
+/** Best-effort task reference from a stored adjustment summary; never invented. */
+function taskIdOf(changeSummary: unknown): string | undefined {
+  if (!changeSummary || typeof changeSummary !== "object") return undefined;
+  const summary = changeSummary as { taskId?: unknown; taskIds?: unknown };
+  if (typeof summary.taskId === "string") return summary.taskId;
+  if (Array.isArray(summary.taskIds) && typeof summary.taskIds[0] === "string") return summary.taskIds[0];
+  return undefined;
+}
 
 const complete = (): Coverage => ({ complete: true, missing: [], observedAt: new Date().toISOString() });
 const snapshotRevision = (input: unknown) => createHash("sha256").update(JSON.stringify(input)).digest("hex");
@@ -39,14 +48,58 @@ export function createEvidencePorts(dependencies: {
         if (!plans) return unavailable("learning", "来源未提供计划列表查询");
         for (const plan of plans) {
           const stage = plan.stages.find(item => item.id === stageId);
-          if (stage) return available({
-            stageId, title: stage.title, objective: stage.objective, from: null, to: null,
-            taskIds: stage.tasks.map(task => task.id), revision: String(plan.version),
-          }, { ...complete(), complete: false, missing: [{ source: "learning.stageRange", reason: "阶段无明确起止时间，需要用户指定复盘范围" }] });
+          if (stage) {
+            const from = stage.startDate ?? null;
+            const to = stage.endDate ?? null;
+            return available({
+              stageId, title: stage.title, objective: stage.objective, from, to,
+              taskIds: stage.tasks.map(task => task.id), revision: String(plan.version),
+            }, from && to
+              ? complete()
+              : { ...complete(), complete: false, missing: [{ source: "learning.stageRange", reason: "阶段没有明确起止日期，需要用户指定复盘范围" }] });
+          }
         }
         return unavailable("learning", "在可访问计划中未找到该阶段");
       },
-      async listHistory() { return unavailable("learning.history", "Learning 尚未提供权威历史查询，当前计划状态不能代替历史事件"); },
+      /**
+       * Only confirmed events are surfaced: plan adjustments that Learning
+       * already persisted. Task status changes and difficulty feedback are not
+       * stored as history there, so the coverage says so instead of guessing.
+       */
+      async listHistory(ctx, range) {
+        const plans = await dependencies.learning.listPlans?.(ctx.ownerId);
+        if (!plans) return unavailable("learning.history", "来源未提供计划列表查询，无法读取已确认的计划调整");
+        if (!dependencies.learning.listAdjustments) {
+          return unavailable("learning.history", "Learning 未提供计划调整历史查询");
+        }
+        const items: SourceChange[] = [];
+        for (const plan of plans) {
+          const adjustments = await dependencies.learning.listAdjustments(ctx.ownerId, plan.id);
+          for (const adjustment of adjustments) {
+            if (adjustment.createdAt < range.from || adjustment.createdAt >= range.to) continue;
+            items.push({
+              sourceDomain: "learning",
+              sourceEventId: adjustment.id,
+              sourceEntityId: adjustment.id,
+              sourceRevision: adjustment.toVersion,
+              occurredAt: adjustment.createdAt,
+              kind: "plan_adjustment",
+              change: "created",
+              snapshot: {
+                title: `学习计划调整（${adjustment.trigger}）`,
+                content: adjustment.reason,
+                taskId: taskIdOf(adjustment.changeSummary),
+                skillIds: [],
+              },
+            });
+          }
+        }
+        items.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+        return available({ items: items.slice(0, 100), nextCursor: null }, {
+          ...complete(), complete: false,
+          missing: [{ source: "learning.history", reason: "当前只同步已确认的计划调整；任务状态变化与困难反馈尚未以历史事件形式提供" }],
+        });
+      },
       async getAssessmentResult() { return unavailable("learning.assessment", "Learning 尚未提供阶段测试结果查询，本模块不发起或重新评分测试"); },
     },
     career: {

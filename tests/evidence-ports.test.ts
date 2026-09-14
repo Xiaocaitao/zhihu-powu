@@ -30,8 +30,9 @@ test("跨模块查询保持真实任务与岗位归属；缺失阶段范围和�
     startDate: "2026-09-14", endDate: "2026-09-21", weeklyMinutes: 120, version: 3,
     learningGoals: ["练习 SQL"], updatedAt: now,
     stages: [{ id: "stage", planId: "plan", order: 1, title: "查询练习", objective: "理解查询", status: "in_progress",
+      startDate: "2026-09-14T00:00:00+08:00", endDate: "2026-09-21T00:00:00+08:00",
       tasks: [{ id: "task", planId: "plan", stageId: "stage", title: "完成查询", description: "说明一条查询",
-        taskType: "practice", status: "in_progress", estimatedMinutes: 60, actualMinutes: null, evidenceRequired: true }] }],
+        taskType: "practice", status: "in_progress", priority: 1, estimatedMinutes: 60, actualMinutes: null, evidenceRequired: true }] }],
   });
   const task = await ports.learning!.getTask({ ownerId: "owner" }, "task");
   assert.equal(task.value?.revision, "3");
@@ -39,11 +40,25 @@ test("跨模块查询保持真实任务与岗位归属；缺失阶段范围和�
   assert.equal(task.coverage.complete, false);
   assert.equal((await ports.learning!.getTask({ ownerId: "other" }, "task")).value, null);
   const stage = await ports.learning!.getStage({ ownerId: "owner" }, "stage");
-  assert.equal(stage.value?.from, null);
-  assert.equal(stage.value?.to, null);
-  const history = await ports.learning!.listHistory({ ownerId: "owner" }, { from: now, to: now });
-  assert.equal(history.value, null);
+  assert.equal(stage.value?.from, "2026-09-14T00:00:00+08:00");
+  assert.equal(stage.value?.to, "2026-09-21T00:00:00+08:00");
+  assert.equal(stage.coverage.complete, true);
+
+  // 只有 Learning 已确认的计划调整会进入时间线；任务状态变化不伪造成历史事件。
+  await learning.saveAdjustment({
+    id: "adjustment-1", ownerId: "owner", planId: "plan", fromVersion: 3, toVersion: 4,
+    trigger: "time_change", reason: "用户本周可用时间减少，改为先完成查询练习",
+    changeSummary: { type: "reschedule", taskId: "task" }, createdAt: now,
+  });
+  const history = await ports.learning!.listHistory({ ownerId: "owner" },
+    { from: new Date(Date.parse(now) - 1000).toISOString(), to: new Date(Date.parse(now) + 1000).toISOString() });
+  assert.equal(history.value?.items.length, 1);
+  assert.equal(history.value?.items[0].kind, "plan_adjustment");
+  assert.equal(history.value?.items[0].sourceEntityId, "adjustment-1");
+  assert.equal(history.value?.items[0].sourceRevision, 4);
+  assert.equal(history.value?.items[0].snapshot.taskId, "task");
   assert.equal(history.coverage.complete, false);
+  assert.match(history.coverage.missing[0].reason, /任务状态变化/);
   await career.saveJob({ id: "job", ownerId: "owner", title: "数据库岗位", description: "岗位要求说明",
     employmentType: "internship", requirements: [{ skillCode: "sql", skillName: "SQL", importance: "required" }],
     source: "manual", createdAt: now });
