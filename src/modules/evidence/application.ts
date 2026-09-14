@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type {
-  CapabilityResult, EvidenceContext, Interview, InterviewTarget, LearningRecord, Page, Project, RecordChanges,
+  Assessment, CapabilityResult, EvidenceContext, Interview, InterviewTarget, LearningRecord, Page, Project, RecordChanges,
   RecordDTO, RecordInput, RecordQuery, RecordRevision, RecoveryHint, Review, ReviewDTO, ReviewSummary, SkillCardDTO,
   InterviewSummary,
 } from "./contracts.ts";
@@ -112,6 +112,46 @@ export class EvidenceApplication {
     return this.commit(ctx, "update_learning_evidence", input, prepared, async repository => {
       await repository.updateRecord(prepared.data!.record);
       await repository.saveRevision(prepared.data!.revision);
+    });
+  }
+
+  /**
+   * Public query boundary used by Career's gap analysis; Career never reads
+   * Evidence storage. Support values come from stored assessments when they
+   * exist. Without one they fall back to record count only because Career's
+   * gap flow needs a first-pass signal, and `verified` states that the number
+   * is not yet backed by an assessment.
+   */
+  async getSkillEvidenceSnapshot(ctx: EvidenceContext, input: { skillCodes: string[] }) {
+    const state = await this.loadState(this.repository, ctx.ownerId);
+    return input.skillCodes.map(skillCode => {
+      const matching = state.records.filter(record => record.status === "active" &&
+        record.skillRefs.some(skill => skill.skillId === skillCode));
+      const findings = state.assessments
+        .filter(item => item.skillIds.includes(skillCode) && !this.assessmentIsStale(state, item))
+        .flatMap(item => item.findings)
+        .filter(finding => finding.skill.skillId === skillCode);
+      const support = findings.some(finding => finding.support === "supported") ? "supported" as const
+        : findings.some(finding => finding.support === "partial") ? "partial" as const
+          : findings.length ? "insufficient" as const
+            : matching.length >= 2 ? "supported" as const
+              : matching.length === 1 ? "partial" as const
+                : "insufficient" as const;
+      return {
+        skillCode,
+        evidenceIds: matching.map(record => record.recordId),
+        evidenceCount: matching.length,
+        support,
+        assessed: findings.length > 0,
+      };
+    });
+  }
+
+  private assessmentIsStale(state: EvidenceState, assessment: Assessment): boolean {
+    if (assessment.validity === "withdrawn") return true;
+    return assessment.evidenceIds.some(id => {
+      const record = state.records.find(candidate => candidate.recordId === id);
+      return !record || record.status !== "active" || (assessment.sourceVersions?.[id] ?? record.version) !== record.version;
     });
   }
 

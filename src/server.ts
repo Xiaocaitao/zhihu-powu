@@ -11,11 +11,13 @@ import { chatRequestSchema, ChatError } from "./modules/chat/contracts.ts";
 import { PiChatRuntime } from "./agent/runtime/pi-chat-runtime.ts";
 import { createZhihuOAuth, type ZhihuOAuthProfile, type ZhihuOAuthProvider } from "./integrations/zhihu/oauth.ts";
 import { matchApplicationRoute, type ApplicationRoute } from "./http/routes.ts";
+import { createCareerRoutes, careerRouteErrorStatus } from "./http/career.ts";
 import type { CapabilityRegistry } from "./agent/tools/registry.ts";
 import type { PromptContext } from "./agent/prompts/system.ts";
 import { PostgresKnowledgeStore } from "./modules/knowledge/postgres-repository.ts";
 import type { KnowledgeStore, KnowledgeUpload } from "./modules/knowledge/contracts.ts";
-import { createDefaultCapabilityRegistry } from "./app/composition-root.ts";
+import { createDefaultApplications, type DefaultApplications } from "./app/composition-root.ts";
+import type { CareerApplication } from "./modules/career/types.ts";
 import { PostgresProfileRepository } from "./modules/profile/postgres-repository.ts";
 import { PostgresCareerRepository } from "./modules/career/postgres-repository.ts";
 import { PostgresLearningRepository } from "./modules/learning/postgres-repository.ts";
@@ -34,13 +36,16 @@ import { initialSkillDefinitions } from "./modules/skills/definitions.ts";
 import { PostgresCatalogRepository } from "./modules/catalog/repository.ts";
 import type { CatalogFilter } from "./modules/catalog/contracts.ts";
 
-type Options = { chatService?: ChatService; knowledgeStore?: KnowledgeStore; catalog?: PostgresCatalogRepository; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider; capabilityRegistry?: CapabilityRegistry; promptContext?: PromptContext };
+type Options = { chatService?: ChatService; knowledgeStore?: KnowledgeStore; catalog?: PostgresCatalogRepository; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider; applications?: DefaultApplications; capabilityRegistry?: CapabilityRegistry; careerApplication?: CareerApplication; promptContext?: PromptContext };
 type OAuthSession = { state?: string; stateVerified?: boolean; accessToken?: string; expiresAt?: number; profile?: ZhihuOAuthProfile; error?: { code: string; message: string } };
 const oauthSessions = new Map<string, OAuthSession>();
 const oauthCookieName = "powu_auth";
 export function resetOAuthSessionsForTests() { oauthSessions.clear(); }
 export function createPowuServer(options: Options = {}): Server {
   const oauth = options.oauth ?? createZhihuOAuth();
+  const careerApplication = options.applications?.careerApplication ?? options.careerApplication;
+  const capabilityRegistry = options.applications?.capabilityRegistry ?? options.capabilityRegistry;
+  const applicationRoutes = [...(options.applicationRoutes ?? []), ...(careerApplication ? createCareerRoutes(careerApplication) : [])];
   return createServer(async (req, res) => {
     const path = (req.url ?? "/").split("?", 1)[0];
     if (path === "/healthz") return send(res, 200, { ok: true });
@@ -119,83 +124,6 @@ export function createPowuServer(options: Options = {}): Server {
         return send(res, 201, { files });
       } catch (error) { return send(res, error instanceof ChatError ? error.status : 400, { ok: false, error: error instanceof ChatError ? error.message : "invalid_upload" }); }
     }
-    if (path.startsWith("/api/evidence/")) {
-      const result = await handleEvidenceHttp({
-        method: req.method ?? "GET", path,
-        query: new URL(req.url ?? "/", "http://localhost").searchParams,
-        operationKey: req.headers["idempotency-key"],
-        ifMatch: req.headers["if-match"],
-        readJson: () => readBody(req),
-      }, { ownerId: authenticatedOwner(req, res), requestId: randomUUID() }, options.capabilityRegistry);
-      return send(res, result.status, result.body);
-    }
-    if (path === "/api/growth/profile" && req.method === "GET") {
-      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "growth_unavailable" });
-      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
-      const profile = options.capabilityRegistry.list().find(capability => capability.name === "get_user_profile");
-      const completion = options.capabilityRegistry.list().find(capability => capability.name === "get_profile_completion");
-      if (!profile || !completion) return send(res, 503, { ok: false, error: "profile_unavailable" });
-      try {
-        const [profileResult, completionResult] = await Promise.all([profile.execute(context, {}), completion.execute(context, {})]);
-        if (!profileResult.ok || !completionResult.ok) return send(res, 502, { ok: false, error: "profile_read_failed" });
-        return send(res, 200, { ok: true, profile: profileResult.data, completion: completionResult.data });
-      } catch (error) { console.error("profile read failed", error); return send(res, 502, { ok: false, error: "profile_read_failed" }); }
-    }
-    if (path === "/api/growth/career" && req.method === "GET") {
-      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "career_unavailable" });
-      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
-      const plan = options.capabilityRegistry.list().find(capability => capability.name === "get_career_plan");
-      const jobs = options.capabilityRegistry.list().find(capability => capability.name === "get_target_jobs");
-      if (!plan || !jobs) return send(res, 503, { ok: false, error: "career_unavailable" });
-      try {
-        const [planResult, jobsResult] = await Promise.all([plan.execute(context, {}), jobs.execute(context, { limit: 50 })]);
-        if (!planResult.ok || !jobsResult.ok) return send(res, 502, { ok: false, error: "career_read_failed" });
-        return send(res, 200, { ok: true, plan: planResult.data ?? null, jobs: (jobsResult.data as { items?: unknown[] } | undefined)?.items ?? [] });
-      } catch (error) { console.error("career read failed", error); return send(res, 502, { ok: false, error: "career_read_failed" }); }
-    }
-    if (path === "/api/growth/learning" && req.method === "GET") {
-      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "learning_unavailable" });
-      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
-      const planCapability = options.capabilityRegistry.list().find(capability => capability.name === "get_active_learning_plan");
-      const draftsCapability = options.capabilityRegistry.list().find(capability => capability.name === "get_learning_plan_drafts");
-      const tasksCapability = options.capabilityRegistry.list().find(capability => capability.name === "get_today_learning_tasks");
-      if (!planCapability || !tasksCapability) return send(res, 503, { ok: false, error: "learning_unavailable" });
-      try {
-        const [planResult, tasksResult] = await Promise.all([planCapability.execute(context, { includeTasks: true }), tasksCapability.execute(context, {})]);
-        if (!planResult.ok || !tasksResult.ok) return send(res, 502, { ok: false, error: "learning_read_failed" });
-        const draftsResult = draftsCapability ? await draftsCapability.execute(context, {}) : null;
-        return send(res, 200, { ok: true, plan: planResult.data ?? null, drafts: draftsResult?.ok ? draftsResult.data ?? [] : [], tasks: tasksResult.data ?? [] });
-      } catch (error) { console.error("learning read failed", error); return send(res, 502, { ok: false, error: "learning_read_failed" }); }
-    }
-    if (path === "/api/growth/records" && req.method === "GET") {
-      const capability = options.capabilityRegistry?.list().find(item => item.name === "get_learning_records");
-      if (!capability) return send(res, 503, { ok: false, error: "records_unavailable" });
-      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
-      try {
-        const result = await capability.execute(context, {});
-        if (!result.ok) return send(res, 502, { ok: false, error: "records_read_failed" });
-        const data = result.data as { page?: { items?: unknown[] } } | undefined;
-        return send(res, 200, { ok: true, items: data?.page?.items ?? [] });
-      } catch (error) { console.error("records read failed", error); return send(res, 502, { ok: false, error: "records_read_failed" }); }
-    }
-    if (path === "/api/growth/interviews" && req.method === "GET") {
-      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "interview_unavailable" });
-      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
-      const records = options.capabilityRegistry.list().find(capability => capability.name === "get_interview_records");
-      if (!records) return send(res, 503, { ok: false, error: "interview_unavailable" });
-      try { const result = await records.execute(context, {}); if (!result.ok) return send(res, 502, { ok: false, error: "interview_read_failed" }); const data = result.data as { page?: { items?: unknown[] }; session?: unknown } | undefined; return send(res, 200, { ok: true, items: data?.page?.items ?? [], session: data?.session ?? null }); }
-      catch (error) { console.error("interview read failed", error); return send(res, 502, { ok: false, error: "interview_read_failed" }); }
-    }
-    if (path === "/api/growth/jobs/library" && req.method === "GET") {
-      if (!options.catalog) return send(res, 503, { ok: false, error: "catalog_unavailable" });
-      try { return send(res, 200, { ok: true, items: await options.catalog.listJobs(catalogFilter(req)) }); }
-      catch (error) { console.error("job catalog read failed", error); return send(res, 502, { ok: false, error: "catalog_read_failed" }); }
-    }
-    if (path === "/api/growth/interviews/library" && req.method === "GET") {
-      if (!options.catalog) return send(res, 503, { ok: false, error: "catalog_unavailable" });
-      try { return send(res, 200, { ok: true, items: await options.catalog.listInterviews(catalogFilter(req)) }); }
-      catch (error) { console.error("interview catalog read failed", error); return send(res, 502, { ok: false, error: "catalog_read_failed" }); }
-    }
     const knowledgeFile = path.match(/^\/api\/knowledge\/files\/([0-9a-f-]+)$/i)?.[1];
     if (knowledgeFile && req.method === "GET") {
       if (!options.knowledgeStore) return send(res, 503, { error: "knowledge_unavailable" });
@@ -211,6 +139,85 @@ export function createPowuServer(options: Options = {}): Server {
         createReadStream(file.path).pipe(res);
       } catch { return send(res, 404, { error: "file_missing" }); }
       return;
+    }    if (path.startsWith("/api/evidence/")) {
+      const result = await handleEvidenceHttp({
+        method: req.method ?? "GET", path,
+        query: new URL(req.url ?? "/", "http://localhost").searchParams,
+        operationKey: req.headers["idempotency-key"],
+        ifMatch: req.headers["if-match"],
+        readJson: () => readBody(req),
+      }, { ownerId: authenticatedOwner(req, res), requestId: randomUUID() }, capabilityRegistry);
+      return send(res, result.status, result.body);
+    }    if (path === "/api/growth/profile" && req.method === "GET") {
+      if (!capabilityRegistry) return send(res, 503, { ok: false, error: "growth_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      const profile = capabilityRegistry.list().find(capability => capability.name === "get_user_profile");
+      const completion = capabilityRegistry.list().find(capability => capability.name === "get_profile_completion");
+      if (!profile || !completion) return send(res, 503, { ok: false, error: "profile_unavailable" });
+      try {
+        const [profileResult, completionResult] = await Promise.all([profile.execute(context, {}), completion.execute(context, {})]);
+        if (!profileResult.ok || !completionResult.ok) return send(res, 502, { ok: false, error: "profile_read_failed" });
+        return send(res, 200, { ok: true, profile: profileResult.data, completion: completionResult.data });
+      } catch (error) { console.error("profile read failed", error); return send(res, 502, { ok: false, error: "profile_read_failed" }); }
+    }
+    if (path === "/api/growth/career" && req.method === "GET") {
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      try {
+        if (careerApplication) {
+          const [dashboard, jobs] = await Promise.all([careerApplication.getCareerDashboard(context, { includeLearningProgress: true }), careerApplication.getTargetJobs(context, { limit: 50 })]);
+          return send(res, 200, { ok: true, ...dashboard, dashboard, plan: dashboard.plan, jobs: jobs.items });
+        }
+        if (!capabilityRegistry) return send(res, 503, { ok: false, error: "career_unavailable" });
+        const plan = capabilityRegistry.list().find(capability => capability.name === "get_career_plan");
+        const jobs = capabilityRegistry.list().find(capability => capability.name === "get_target_jobs");
+        if (!plan || !jobs) return send(res, 503, { ok: false, error: "career_unavailable" });
+        const [planResult, jobsResult] = await Promise.all([plan.execute(context, {}), jobs.execute(context, { limit: 50 })]);
+        if (!planResult.ok || !jobsResult.ok) return send(res, 502, { ok: false, error: "career_read_failed" });
+        return send(res, 200, { ok: true, plan: planResult.data ?? null, jobs: (jobsResult.data as { items?: unknown[] } | undefined)?.items ?? [] });
+      } catch (error) { console.error("career read failed", error); return send(res, 502, { ok: false, error: "career_read_failed" }); }
+    }
+    if (path === "/api/growth/learning" && req.method === "GET") {
+      if (!capabilityRegistry) return send(res, 503, { ok: false, error: "learning_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      const planCapability = capabilityRegistry.list().find(capability => capability.name === "get_active_learning_plan");
+      const draftsCapability = capabilityRegistry.list().find(capability => capability.name === "get_learning_plan_drafts");
+      const tasksCapability = capabilityRegistry.list().find(capability => capability.name === "get_today_learning_tasks");
+      if (!planCapability || !tasksCapability) return send(res, 503, { ok: false, error: "learning_unavailable" });
+      try {
+        const [planResult, tasksResult] = await Promise.all([planCapability.execute(context, { includeTasks: true }), tasksCapability.execute(context, {})]);
+        if (!planResult.ok || !tasksResult.ok) return send(res, 502, { ok: false, error: "learning_read_failed" });
+        const draftsResult = draftsCapability ? await draftsCapability.execute(context, {}) : null;
+        return send(res, 200, { ok: true, plan: planResult.data ?? null, drafts: draftsResult?.ok ? draftsResult.data ?? [] : [], tasks: tasksResult.data ?? [] });
+      } catch (error) { console.error("learning read failed", error); return send(res, 502, { ok: false, error: "learning_read_failed" }); }
+    }
+    if (path === "/api/growth/records" && req.method === "GET") {
+      const capability = capabilityRegistry?.list().find(item => item.name === "get_learning_records");
+      if (!capability) return send(res, 503, { ok: false, error: "records_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      try {
+        const result = await capability.execute(context, {});
+        if (!result.ok) return send(res, 502, { ok: false, error: "records_read_failed" });
+        const data = result.data as { page?: { items?: unknown[] } } | undefined;
+        return send(res, 200, { ok: true, items: data?.page?.items ?? [] });
+      } catch (error) { console.error("records read failed", error); return send(res, 502, { ok: false, error: "records_read_failed" }); }
+    }
+    if (path === "/api/growth/interviews" && req.method === "GET") {
+      if (!capabilityRegistry) return send(res, 503, { ok: false, error: "interview_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      const records = capabilityRegistry.list().find(capability => capability.name === "get_interview_records");
+      if (!records) return send(res, 503, { ok: false, error: "interview_unavailable" });
+      try { const result = await records.execute(context, {}); if (!result.ok) return send(res, 502, { ok: false, error: "interview_read_failed" }); const data = result.data as { page?: { items?: unknown[] }; session?: unknown } | undefined; return send(res, 200, { ok: true, items: data?.page?.items ?? [], session: data?.session ?? null }); }
+      catch (error) { console.error("interview read failed", error); return send(res, 502, { ok: false, error: "interview_read_failed" }); }
+    }
+    if (path === "/api/growth/jobs/library" && req.method === "GET") {
+      if (!options.catalog) return send(res, 503, { ok: false, error: "catalog_unavailable" });
+      try { return send(res, 200, { ok: true, items: await options.catalog.listJobs(catalogFilter(req)) }); }
+      catch (error) { console.error("job catalog read failed", error); return send(res, 502, { ok: false, error: "catalog_read_failed" }); }
+    }
+    if (path === "/api/growth/interviews/library" && req.method === "GET") {
+      if (!options.catalog) return send(res, 503, { ok: false, error: "catalog_unavailable" });
+      try { return send(res, 200, { ok: true, items: await options.catalog.listInterviews(catalogFilter(req)) }); }
+      catch (error) { console.error("interview catalog read failed", error); return send(res, 502, { ok: false, error: "catalog_read_failed" }); }
     }
     if (path === "/api/routes" || path.startsWith("/api/routes/")) return send(res, 410, { ok: false, error: "route_api_retired", message: "请使用 /api/chat" });
     if (path === "/api/chat" && req.method === "POST") return chat(req, res);
@@ -226,7 +233,7 @@ export function createPowuServer(options: Options = {}): Server {
     }
     const session = path.match(/^\/api\/sessions\/([0-9a-f-]+)$/i)?.[1];
     if (session && req.method === "GET") { if (!options.chatService) return send(res, 503, { error: "chat_unavailable" }); const runs = await options.chatService.get(authenticatedOwner(req, res), session); return send(res, runs ? 200 : 404, runs ?? { error: "not_found" }); }
-    const applicationRoute = matchApplicationRoute(options.applicationRoutes ?? [], req.method ?? "GET", path);
+    const applicationRoute = matchApplicationRoute(applicationRoutes, req.method ?? "GET", path);
     if (applicationRoute) {
       const controller = new AbortController();
       const cancel = () => controller.abort();
@@ -239,7 +246,7 @@ export function createPowuServer(options: Options = {}): Server {
           context: { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID(), signal: controller.signal },
         });
       } catch (error) {
-        if (!res.headersSent) send(res, 500, { ok: false, error: "application_route_failed" });
+        if (!res.headersSent) send(res, careerRouteErrorStatus(error), { ok: false, error: error instanceof ZodError ? "invalid_request" : error instanceof Error ? error.message : "application_route_failed" });
         else if (!res.writableEnded) res.end();
       } finally {
         req.removeListener("aborted", cancel); res.removeListener("close", cancel);
@@ -370,15 +377,32 @@ export async function startPowuServer(options: Options = {}): Promise<Server> {
       knowledge: knowledgeStore,
     }),
   }));
-  const capabilityRegistry = options.capabilityRegistry ?? createDefaultCapabilityRegistry({
-    skills, profile: profileRepository, evidence, career: careerRepository, learning: learningRepository,
+  const applications = options.applications ?? createDefaultApplications({
+    profile: profileRepository,
+    evidence,
+    skills,
+    career: careerRepository,
+    learning: learningRepository,
+    careerApplication: options.careerApplication,
   });
+  const capabilityRegistry = options.capabilityRegistry ?? applications.capabilityRegistry;
+  const careerApplication = applications.careerApplication;
   const service = options.chatService ?? new ChatService(new PostgresChatStore(pool), new PiChatRuntime({ capabilityRegistry, promptContext: options.promptContext }));
-  const server = createPowuServer({ ...options, catalog: options.catalog ?? new PostgresCatalogRepository(pool), capabilityRegistry, chatService: service, knowledgeStore, readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }) });
+  const server = createPowuServer({
+    ...options,
+    catalog: options.catalog ?? new PostgresCatalogRepository(pool),
+    applications: { careerApplication, capabilityRegistry },
+    chatService: service,
+    knowledgeStore,
+    readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }),
+  });
   server.once("close", () => void pool.end());
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); });
+    server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => {
+      server.removeListener("error", reject);
+      resolve();
+    });
   });
   return server;
 }
