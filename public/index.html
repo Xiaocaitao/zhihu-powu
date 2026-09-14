@@ -775,11 +775,11 @@ if(confirmTitle&&confirmHelp){if(confirmed){confirmTitle.textContent='规划已�
         },
       }, options);
 
-      document.querySelector('#interview-start-form')?.addEventListener('submit', event => { event.preventDefault(); void startInterview(); });
-      document.querySelector('[data-interview-resume]')?.addEventListener('click', () => { if (!interview.busy) { interview.session = null; void interviewPanel(); } });
-      document.querySelector('#interview-answer-form')?.addEventListener('submit', event => { event.preventDefault(); void submitAnswer(); });
-      document.querySelector('[data-interview-finish]')?.addEventListener('click', () => void finishInterview());
-      document.querySelector('[data-interview-again]')?.addEventListener('click', () => void startInterview({ reuse: true }));
+      document.querySelector('#interview-start-form')?.addEventListener('submit', event => { event.preventDefault(); return startInterview(); });
+      document.querySelector('[data-interview-resume]')?.addEventListener('click', () => { if (!interview.busy) { interview.session = null; return interviewPanel(); } });
+      document.querySelector('#interview-answer-form')?.addEventListener('submit', event => { event.preventDefault(); return submitAnswer(); });
+      document.querySelector('[data-interview-finish]')?.addEventListener('click', () => finishInterview());
+      document.querySelector('[data-interview-again]')?.addEventListener('click', () => startInterview({ reuse: true }));
       document.querySelector('#record-form')?.addEventListener('submit', event => void submitRecord(event));
       document.querySelector('#record-kind')?.addEventListener('change', syncProjectFields);
       document.querySelector('#record-filter-form')?.addEventListener('submit', event => { event.preventDefault(); void refreshRecordPage(); });
