@@ -236,8 +236,8 @@ export class PostgresLearningRepository implements LearningRepository {
       await client.query(
         `INSERT INTO learning_stages
           (id, plan_id, stage_order, title, objective, start_date, end_date,
-           status, assessment_required, assessment_id, progress_percent, tasks)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'[]'::jsonb)`,
+           status, assessment_required, assessment_id, progress_percent)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
         [stage.id, plan.id, stage.order, stage.title, stage.objective,
           stage.startDate ?? plan.startDate, stage.endDate ?? plan.endDate,
           stage.status, stage.assessmentRequired ?? false, stage.assessmentId ?? null,

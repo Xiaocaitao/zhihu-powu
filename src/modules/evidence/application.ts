@@ -1,108 +1,323 @@
-import type { EvidenceContext, RecordInput, CapabilityResult } from "./contracts.ts";
-import { EvidenceService } from "./service.ts";
+import { createHash } from "node:crypto";
+import type {
+  Assessment, CapabilityResult, EvidenceContext, Interview, InterviewTarget, LearningRecord, Page, Project, RecordChanges,
+  RecordDTO, RecordInput, RecordQuery, RecordRevision, RecoveryHint, Review, ReviewDTO, ReviewSummary, SkillCardDTO,
+  InterviewSummary,
+} from "./contracts.ts";
+import type { Coverage, SourceChange } from "./ports.ts";
+import { EvidenceService, type EvidenceState } from "./service.ts";
 import type { EvidenceRepository } from "./repository.ts";
 
-/** Bridges the deterministic domain service to a durable repository. */
+const STATE_LIMIT = 500;
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)]));
+  }
+  return value;
+}
+
+function conflict<T>(message: string): CapabilityResult<T> {
+  return { ok: false, changed: false, domain: "evidence", status: "rejected", summary: message,
+    error: { code: "DUPLICATE_REQUEST", message, retryable: false } };
+}
+
+/**
+ * Orchestration only: hydrates state from the repository, runs the domain service
+ * (which may call external query ports and the generation port) and then persists
+ * the resulting aggregate inside one short, owner-scoped transaction.
+ */
 export class EvidenceApplication {
-  private readonly service: EvidenceService;
   private readonly repository: EvidenceRepository;
-  constructor(service: EvidenceService, repository: EvidenceRepository) { this.service = service; this.repository = repository; }
+  private readonly service: EvidenceService;
+  constructor(repository: EvidenceRepository, service: EvidenceService) {
+    this.repository = repository;
+    this.service = service;
+  }
 
-  async recordLearningEvidence(ctx: EvidenceContext, input: RecordInput) {
-    const result = this.service.recordLearningEvidence(ctx, input);
-    if (result.ok && result.changed && result.data?.record) {
-      try { await this.repository.createRecord(result.data.record); }
-      catch (error) { this.service.discardUnsavedRecord(result.data.record.recordId); throw error; }
+  private async loadState(repository: EvidenceRepository, ownerId: string): Promise<EvidenceState> {
+    const [records, projects, interviews, assessments, reviews] = await Promise.all([
+      repository.listRecords(ownerId, { limit: STATE_LIMIT, includeWithdrawn: true }),
+      repository.listProjects(ownerId),
+      repository.listInterviews(ownerId),
+      repository.listAssessments(ownerId),
+      repository.listReviews(ownerId),
+    ]);
+    return { records, projects, interviews, assessments, reviews };
+  }
+
+  /** Persist prepared effects, deduplicating by the trusted operation key. */
+  private async commit<T>(
+    ctx: EvidenceContext,
+    capability: string,
+    payload: unknown,
+    result: CapabilityResult<T>,
+    persist: (repository: EvidenceRepository, state: EvidenceState) => Promise<CapabilityResult<T> | void>,
+  ): Promise<CapabilityResult<T>> {
+    const operationKey = ctx.operationKey ?? ctx.requestId;
+    const payloadHash = createHash("sha256").update(JSON.stringify(canonical(payload))).digest("hex");
+    return this.repository.transaction(ctx.ownerId, async repository => {
+      if (operationKey) {
+        const previous = await repository.getOperation(ctx.ownerId, capability, operationKey);
+        if (previous) {
+          if (previous.payloadHash !== payloadHash) return conflict<T>("同一操作标识不能用于不同内容");
+          return { ...(previous.result as CapabilityResult<T>), changed: false, status: "read",
+            summary: "重复请求，返回已提交结果" };
+        }
+      }
+      const override = await persist(repository, await this.loadState(repository, ctx.ownerId));
+      const finalResult = override ?? result;
+      if (operationKey) {
+        await repository.saveOperation({ ownerId: ctx.ownerId, capability, operationKey, payloadHash, result: finalResult });
+      }
+      return finalResult;
+    });
+  }
+
+  private async read<T>(ctx: EvidenceContext, run: (state: EvidenceState) => T | Promise<T>): Promise<T> {
+    return run(await this.loadState(this.repository, ctx.ownerId));
+  }
+
+  /**
+   * Interview writes can lose a race with another writer. The repository
+   * refuses a stale snapshot; callers get a retryable conflict instead of a
+   * generic failure so the user can simply refresh and continue.
+   */
+  private async commitInterview<T>(
+    ctx: EvidenceContext, capability: string, payload: unknown, result: CapabilityResult<T>,
+    persist: (repository: EvidenceRepository, state: EvidenceState) => Promise<CapabilityResult<T> | void>,
+  ): Promise<CapabilityResult<T>> {
+    try {
+      return await this.commit(ctx, capability, payload, result, persist);
+    } catch (error) {
+      if (error instanceof Error && error.message === "STALE_INTERVIEW_AGGREGATE") {
+        return {
+          ok: false, changed: false, domain: "evidence", status: "rejected",
+          summary: "会话已被其他操作更新，请刷新后重试",
+          error: { code: "INVALID_STATE", message: "会话已被其他操作更新，请刷新后重试", retryable: true },
+        };
+      }
+      throw error;
     }
-    return result;
   }
 
-  async getLearningRecords(ctx: EvidenceContext, filter: { from?: string; to?: string; taskId?: string; skillId?: string } = {}) {
-    const records = await this.repository.listRecords(ctx.ownerId, filter);
-    return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取学习记录", data: { items: records } };
+  /* ----------------------------- records ---------------------------- */
+  async recordLearningEvidence(ctx: EvidenceContext, input: RecordInput) {
+    const prepared = await this.service.createRecord(ctx, await this.loadState(this.repository, ctx.ownerId), input);
+    if (!prepared.ok || !prepared.data) return prepared;
+    const { record, project } = prepared.data;
+    return this.commit(ctx, "record_learning_evidence", input, prepared, async (repository, state) => {
+      // Re-creating a fact already recorded from the same trusted source must not duplicate it.
+      const existing = state.records.find(item =>
+        item.source.domain === record.source.domain && item.source.entityId === record.source.entityId);
+      if (existing) throw new Error("DUPLICATE_SOURCE_FACT");
+      if (project) await repository.saveProject(project);
+      await repository.createRecord(record);
+    });
   }
 
-  async updateLearningEvidence(ctx: EvidenceContext, recordId: string, changes: Parameters<EvidenceService["updateLearningEvidence"]>[2]) {
-    const existing = await this.repository.getRecord(ctx.ownerId, recordId);
-    if (existing) this.service.hydrateRecord(existing);
-    const result = this.service.updateLearningEvidence(ctx, recordId, changes);
-    if (result.ok && result.changed && result.data?.record) await this.repository.updateRecord(result.data.record);
-    return result;
+  async getLearningRecords(ctx: EvidenceContext, query: RecordQuery) {
+    return this.read(ctx, state => this.service.queryRecords(ctx, state, query));
   }
 
-  async getSkillEvidence(ctx: EvidenceContext, skillId?: string) {
-    const records = await this.repository.listRecords(ctx.ownerId, skillId ? { skillId } : {});
-    const groups = new Map<string, string[]>();
-    for (const record of records) for (const skill of record.skillIds ?? []) groups.set(skill, [...(groups.get(skill) ?? []), record.recordId]);
-    return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取能力证据", data: { items: [...groups].map(([skillId, recordIds]) => ({ skillId, support: recordIds.length > 1 ? "supported" : "partial", rationale: "基于已保存记录，仍需结合具体材料验证", recordIds })) } };
+  async updateLearningEvidence(ctx: EvidenceContext, input:
+    | { recordId: string; action: "amend"; changes: RecordChanges }
+    | { recordId: string; action: "withdraw"; reason: string }
+  ): Promise<CapabilityResult<{
+    record: LearningRecord; revision: RecordRevision; invalidatedAssessmentIds: string[]; affectedReviewIds: string[];
+  }>> {
+    const state = await this.loadState(this.repository, ctx.ownerId);
+    const prepared = input.action === "amend"
+      ? await this.service.amendRecord(ctx, state, input.recordId, input.changes)
+      : await this.service.withdrawRecord(ctx, state, input.recordId, input.reason);
+    if (!prepared.ok || !prepared.data) return prepared;
+    return this.commit(ctx, "update_learning_evidence", input, prepared, async repository => {
+      await repository.updateRecord(prepared.data!.record);
+      await repository.saveRevision(prepared.data!.revision);
+    });
   }
-  async evaluateLearningEvidence(ctx: EvidenceContext, evidenceIds: string[], skillIds: string[]) {
-    const records = await this.repository.listRecords(ctx.ownerId, {});
-    records.filter(record => evidenceIds.includes(record.recordId)).forEach(record => this.service.hydrateRecord(record));
-    const result = this.service.evaluateLearningEvidence(ctx, evidenceIds, skillIds);
-    if (result.ok && result.data?.assessment) await this.repository.saveAssessment(result.data.assessment);
-    return result;
-  }
-  async generateLearningReview(ctx: EvidenceContext, from: string, to: string) {
-    const records = await this.repository.listRecords(ctx.ownerId, { from, to });
-    records.forEach(record => this.service.hydrateRecord(record));
-    const result = this.service.generateLearningReview(ctx, from, to);
-    if (result.ok && result.data?.review) await this.repository.saveReview(result.data.review);
-    return result;
-  }
-  async getLearningReviews(ctx: EvidenceContext) { return this.service.getLearningReviews(ctx); }
 
-  async saveAssessment(assessment: Parameters<EvidenceRepository["saveAssessment"]>[0]) { await this.repository.saveAssessment(assessment); return { ok: true, changed: true, domain: "evidence" as const, status: "applied" as const, summary: "能力评估已保存", data: { assessment } }; }
-  async saveReview(review: Parameters<EvidenceRepository["saveReview"]>[0]) { await this.repository.saveReview(review); return { ok: true, changed: true, domain: "evidence" as const, status: "applied" as const, summary: "阶段复盘已保存", data: { review } }; }
+  /**
+   * Public query boundary used by Career's gap analysis; Career never reads
+   * Evidence storage. Support values come from stored assessments when they
+   * exist. Without one they fall back to record count only because Career's
+   * gap flow needs a first-pass signal, and `verified` states that the number
+   * is not yet backed by an assessment.
+   */
+  async getSkillEvidenceSnapshot(ctx: EvidenceContext, input: { skillCodes: string[] }) {
+    const state = await this.loadState(this.repository, ctx.ownerId);
+    return input.skillCodes.map(skillCode => {
+      const matching = state.records.filter(record => record.status === "active" &&
+        record.skillRefs.some(skill => skill.skillId === skillCode));
+      const findings = state.assessments
+        .filter(item => item.skillIds.includes(skillCode) && !this.assessmentIsStale(state, item))
+        .flatMap(item => item.findings)
+        .filter(finding => finding.skill.skillId === skillCode);
+      const support = findings.some(finding => finding.support === "supported") ? "supported" as const
+        : findings.some(finding => finding.support === "partial") ? "partial" as const
+          : findings.length ? "insufficient" as const
+            : matching.length >= 2 ? "supported" as const
+              : matching.length === 1 ? "partial" as const
+                : "insufficient" as const;
+      return {
+        skillCode,
+        evidenceIds: matching.map(record => record.recordId),
+        evidenceCount: matching.length,
+        support,
+        assessed: findings.length > 0,
+      };
+    });
+  }
 
-  async startInterview(ctx: EvidenceContext, target: Parameters<EvidenceService["startInterview"]>[1], totalQuestions?: number) {
-    const result = this.service.startInterview(ctx, target, totalQuestions);
-    if (result.ok && result.changed && result.data?.interview) await this.repository.saveInterview(result.data.interview);
-    return result;
+  private assessmentIsStale(state: EvidenceState, assessment: Assessment): boolean {
+    if (assessment.validity === "withdrawn") return true;
+    return assessment.evidenceIds.some(id => {
+      const record = state.records.find(candidate => candidate.recordId === id);
+      return !record || record.status !== "active" || (assessment.sourceVersions?.[id] ?? record.version) !== record.version;
+    });
+  }
+
+  async getSkillEvidence(ctx: EvidenceContext, query: {
+    skillIds?: string[]; from?: string; to?: string; sources?: ("evidence" | "learning")[];
+    limit?: number; cursor?: string;
+  }): Promise<CapabilityResult<{ page: Page<SkillCardDTO>; coverage: Coverage }>> {
+    return this.read(ctx, state => this.service.querySkillCards(ctx, state, query));
+  }
+
+  async evaluateLearningEvidence(ctx: EvidenceContext, input: {
+    evidenceIds: string[]; skillIds: string[];
+    criteria?: { kind: "job"; jobId: string } | { kind: "task"; taskId: string };
+    focus?: string;
+  }): Promise<CapabilityResult<{ assessment: import("./contracts.ts").Assessment; recovery?: RecoveryHint }>> {
+    const prepared = await this.service.assessEvidence(ctx, await this.loadState(this.repository, ctx.ownerId), input);
+    if (!prepared.ok || !prepared.data) return prepared;
+    return this.commit(ctx, "evaluate_learning_evidence", input, prepared,
+      (repository) => repository.saveAssessment(prepared.data!.assessment));
+  }
+
+  async generateLearningReview(ctx: EvidenceContext, input: {
+    from?: string; to?: string; stageId?: string; taskIds?: string[]; projectIds?: string[];
+    skillIds?: string[]; focus?: string;
+  }): Promise<CapabilityResult<{ review: Review; recovery?: RecoveryHint }>> {
+    const prepared = await this.service.generateReview(ctx, await this.loadState(this.repository, ctx.ownerId), input);
+    if (!prepared.ok || !prepared.data) return prepared;
+    return this.commit(ctx, "generate_learning_review", input, prepared,
+      (repository) => repository.saveReview(prepared.data!.review));
+  }
+
+  async getLearningReviews(ctx: EvidenceContext, query: {
+    from?: string; to?: string; stageId?: string; limit?: number; reviewId?: string;
+  }): Promise<CapabilityResult<{ review: ReviewDTO } | { page: Page<ReviewSummary> }>> {
+    return this.read(ctx, state => this.service.queryReviews(ctx, state, query, query.reviewId));
+  }
+
+  /**
+   * Trusted host entry point for confirmed changes from other modules.
+   * Not exposed as a Agent tool, so a model cannot fabricate "another module said so".
+   */
+  async syncSourceChange(ctx: EvidenceContext, change: SourceChange) {
+    const prepared = await this.service.applySourceChange(ctx, await this.loadState(this.repository, ctx.ownerId), change);
+    if (!prepared.ok || !prepared.data) return prepared;
+    if (prepared.data.duplicate) return { ...prepared, changed: false, status: "read" as const };
+    const record = prepared.data.record;
+    const isNew = !state2Has(await this.loadState(this.repository, ctx.ownerId), record.recordId);
+    return this.commit(ctx, "sync_source_change", change, prepared, async repository => {
+      if (isNew) await repository.createRecord(record); else await repository.updateRecord(record);
+    });
+  }
+
+  /* --------------------------- interviews --------------------------- */
+  async startInterview(ctx: EvidenceContext, input: {
+    target: InterviewTarget; difficulty?: "introductory" | "intermediate" | "advanced";
+    questionCount?: number; focus?: string; startNew?: boolean;
+  }): Promise<CapabilityResult<{ interview: Interview; reused: boolean; recovery?: RecoveryHint }>> {
+    const prepared = await this.service.startInterview(ctx, await this.loadState(this.repository, ctx.ownerId), input);
+    if (!prepared.ok || !prepared.data) return prepared;
+    if (prepared.data.reused) return prepared;
+    return this.commit(ctx, "start_interview", input, prepared,
+      (repository) => repository.saveInterview(prepared.data!.interview));
   }
 
   async getInterviewSession(ctx: EvidenceContext, interviewId: string) {
     const interview = await this.repository.getInterview(ctx.ownerId, interviewId);
-    if (!interview) return { ok: false, changed: false, domain: "evidence" as const, status: "rejected" as const, summary: "面试不存在", error: { code: "NOT_FOUND", message: "面试不存在" } };
-    return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取面试会话", data: { interview } };
+    if (!interview) return notFound<{ interview: Interview }>("面试不存在");
+    return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const,
+      summary: "已读取面试会话", data: { interview } };
   }
 
-  async finishInterview(ctx: EvidenceContext, interviewId: string) {
-    const existing = await this.repository.getInterview(ctx.ownerId, interviewId);
-    if (!existing) return { ok: false, changed: false, domain: "evidence" as const, status: "rejected" as const, summary: "面试不存在", error: { code: "NOT_FOUND", message: "面试不存在" } };
-    this.service.hydrateInterview(existing);
-    const result = this.service.finishInterview(ctx, interviewId);
-    if (result.ok && result.data?.interview) await this.repository.saveInterview(result.data.interview);
-    return result;
+  async submitInterviewAnswer(ctx: EvidenceContext, input: { interviewId: string; questionId: string; answer: string }) {
+    const prepared = await this.service.submitAnswer(
+      ctx, await this.loadState(this.repository, ctx.ownerId), input.interviewId, input.questionId, input.answer);
+    if (!prepared.ok || !prepared.data) return prepared;
+    if (!prepared.changed) return prepared;
+    const preparedData = prepared.data;
+    return this.commitInterview(ctx, "submit_interview_answer", input, prepared, async (repository, fresh) => {
+      // The aggregate was prepared outside the transaction; re-check the
+      // precondition against the state the transaction actually sees, so two
+      // concurrent answers cannot both be persisted for the same question.
+      const check = this.service.checkAnswer(fresh, input.interviewId, input.questionId, input.answer);
+      if (!check.ok) return check.result;
+      if (check.replay) {
+        return { ...prepared, changed: false, status: "read" as const, summary: "重复提交，返回已有回答",
+          data: { ...preparedData, interview: check.interview, answer: check.replay,
+            feedback: check.replay.feedback, nextQuestion: null, report: check.interview.report } };
+      }
+      const summary = preparedData.interview.report
+        ? { report: preparedData.interview.report, reportStatus: preparedData.interview.reportStatus,
+            recovery: preparedData.interview.recovery }
+        : null;
+      const applied = this.service.applyAnswer(check.interview, input.questionId, input.answer,
+        preparedData.feedback, preparedData.answer.createdAt, summary);
+      await repository.saveInterview(applied.interview);
+      return { ...prepared,
+        data: { ...preparedData, interview: applied.interview, answer: applied.answer,
+          feedback: applied.answer.feedback, nextQuestion: applied.interview.currentQuestion,
+          report: applied.interview.report } };
+    });
   }
 
-  async submitInterviewAnswer(ctx: EvidenceContext, interviewId: string, questionId: string, text: string) {
-    const existing = await this.repository.getInterview(ctx.ownerId, interviewId);
-    if (existing) this.service.hydrateInterview(existing);
-    const result = this.service.submitInterviewAnswer(ctx, interviewId, questionId, text);
-    const answer = result.ok && result.data && "answer" in result.data ? result.data.answer as { answerId: string; text: string; feedback?: string } : undefined;
-    if (result.ok && result.changed && answer && result.data && "interview" in result.data) {
-      // Persist the aggregate in one repository transaction: header count,
-      // answer row and feedback must either all commit or all roll back.
-      await this.repository.saveInterview(result.data.interview as any);
-    }
-    return result;
+  async finishInterview(ctx: EvidenceContext, input: { interviewId: string; reason?: string }) {
+    const prepared = await this.service.finishInterview(
+      ctx, await this.loadState(this.repository, ctx.ownerId), input.interviewId, input.reason);
+    if (!prepared.ok || !prepared.data) return prepared;
+    if (!prepared.changed) return prepared;
+    const preparedData = prepared.data;
+    return this.commitInterview(ctx, "finish_interview", input, prepared, async (repository, fresh) => {
+      const check = this.service.checkFinish(fresh, input.interviewId);
+      if (!check.ok) return check.result;
+      if (check.interview.status === "completed" || check.interview.status === "ended_early") {
+        return { ...prepared, changed: false, status: "read" as const, summary: "面试此前已结束",
+          data: { interview: check.interview, report: check.interview.report } };
+      }
+      const summary = preparedData.interview.report
+        ? { report: preparedData.interview.report, reportStatus: preparedData.interview.reportStatus,
+            recovery: preparedData.interview.recovery }
+        : null;
+      const applied = this.service.applyFinish(check.interview, input.reason, summary);
+      await repository.saveInterview(applied.interview);
+      return { ...prepared, data: { interview: applied.interview, report: applied.interview.report } };
+    });
   }
 
-  async getInterviewRecords(ctx: EvidenceContext) {
-    if (this.repository.listInterviews) {
-      const items = await this.repository.listInterviews(ctx.ownerId);
-      const active = items.find(item => item.status === "active");
-      const session = active ? await this.repository.getInterview(ctx.ownerId, active.interviewId) : null;
-      return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取面试历史", data: { items, session } };
-    }
-    return this.service.getInterviewRecords(ctx);
+  async getInterviewFeedback(ctx: EvidenceContext, input: { interviewId: string; questionId?: string }) {
+    return this.read(ctx, state => this.service.getFeedback(ctx, state, input.interviewId, input.questionId));
   }
 
-  async getInterviewFeedback(ctx: EvidenceContext, interviewId: string) {
-    const interview = await this.repository.getInterview(ctx.ownerId, interviewId);
-    if (!interview) return { ok: false, changed: false, domain: "evidence" as const, status: "rejected" as const, summary: "面试不存在", error: { code: "NOT_FOUND", message: "面试不存在" } };
-    this.service.hydrateInterview(interview);
-    return this.service.getInterviewFeedback(ctx, interviewId);
+  async getInterviewRecords(ctx: EvidenceContext, query: {
+    from?: string; to?: string; jobId?: string; skillId?: string;
+    statuses?: Interview["status"][]; limit?: number; cursor?: string;
+  }): Promise<CapabilityResult<{ page: Page<InterviewSummary>; session: Interview | null }>> {
+    return this.read(ctx, state => this.service.queryInterviews(ctx, state, query));
   }
 }
+
+function state2Has(state: EvidenceState, recordId: string) { return state.records.some(item => item.recordId === recordId); }
+
+function notFound<T>(message: string): CapabilityResult<T> {
+  return { ok: false, changed: false, domain: "evidence", status: "rejected", summary: message,
+    error: { code: "NOT_FOUND", message, retryable: false } };
+}
+
+export type { Project, RecordDTO };
