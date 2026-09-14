@@ -38,6 +38,10 @@ export class LearningService implements LearningApplication {
     return { planId: plan.id, planVersion: plan.version, totalTasks: tasks.length, completedTasks: completed, progressPercent: tasks.length ? Math.round(completed / tasks.length * 100) : 0, currentStageId: current?.id, currentStageProgressPercent: currentTasks.length ? Math.round(currentTasks.filter(task => task.status === "completed").length / currentTasks.length * 100) : undefined };
   }
 
+  async getPlanProgress(ctx: LearningContext, input: { planId?: string }) {
+    return this.getLearningProgress(ctx, input);
+  }
+
   async createLearningPlan(command: DomainCommand<CreatePlanInput>) {
     const duplicate = await this.replay(command, "create_learning_plan"); if (duplicate) return duplicate as LearningResult<{ plan: LearningPlan }>;
     const existingFinal = await this.findActiveFinal(command.context.ownerId);
