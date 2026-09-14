@@ -22,8 +22,10 @@ import { PostgresLearningRepository } from "./modules/learning/postgres-reposito
 import { PostgresEvidenceRepository } from "./modules/evidence/postgres-repository.ts";
 import { EvidenceApplication } from "./modules/evidence/application.ts";
 import { EvidenceService } from "./modules/evidence/service.ts";
+import { PostgresCatalogRepository } from "./modules/catalog/repository.ts";
+import type { CatalogFilter } from "./modules/catalog/contracts.ts";
 
-type Options = { chatService?: ChatService; knowledgeStore?: KnowledgeStore; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider; capabilityRegistry?: CapabilityRegistry; promptContext?: PromptContext };
+type Options = { chatService?: ChatService; knowledgeStore?: KnowledgeStore; catalog?: PostgresCatalogRepository; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider; capabilityRegistry?: CapabilityRegistry; promptContext?: PromptContext };
 type OAuthSession = { state?: string; stateVerified?: boolean; accessToken?: string; expiresAt?: number; profile?: ZhihuOAuthProfile; error?: { code: string; message: string } };
 const oauthSessions = new Map<string, OAuthSession>();
 const oauthCookieName = "powu_auth";
@@ -199,6 +201,16 @@ export function createPowuServer(options: Options = {}): Server {
       try { const result = await records.execute(context, {}); if (!result.ok) return send(res, 502, { ok: false, error: "interview_read_failed" }); const data = result.data as { items?: unknown[]; session?: unknown } | undefined; return send(res, 200, { ok: true, items: data?.items ?? [], session: data?.session ?? null }); }
       catch (error) { console.error("interview read failed", error); return send(res, 502, { ok: false, error: "interview_read_failed" }); }
     }
+    if (path === "/api/growth/jobs/library" && req.method === "GET") {
+      if (!options.catalog) return send(res, 503, { ok: false, error: "catalog_unavailable" });
+      try { return send(res, 200, { ok: true, items: await options.catalog.listJobs(catalogFilter(req)) }); }
+      catch (error) { console.error("job catalog read failed", error); return send(res, 502, { ok: false, error: "catalog_read_failed" }); }
+    }
+    if (path === "/api/growth/interviews/library" && req.method === "GET") {
+      if (!options.catalog) return send(res, 503, { ok: false, error: "catalog_unavailable" });
+      try { return send(res, 200, { ok: true, items: await options.catalog.listInterviews(catalogFilter(req)) }); }
+      catch (error) { console.error("interview catalog read failed", error); return send(res, 502, { ok: false, error: "catalog_read_failed" }); }
+    }
     const knowledgeFile = path.match(/^\/api\/knowledge\/files\/([0-9a-f-]+)$/i)?.[1];
     if (knowledgeFile && req.method === "GET") {
       if (!options.knowledgeStore) return send(res, 503, { error: "knowledge_unavailable" });
@@ -323,6 +335,7 @@ function cookieOwner(req: IncomingMessage, res: ServerResponse) {
 }
 async function serve(res: ServerResponse, relative: string, type: string) { try { res.writeHead(200, { "content-type": type }); res.end(await readFile(new URL(relative, import.meta.url))); } catch { send(res, 404, { error: "not_found" }); } }
 function send(res: ServerResponse, status: number, body: unknown) { if (!res.headersSent) res.writeHead(status, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); }
+function catalogFilter(req: IncomingMessage): CatalogFilter { const query = new URL(req.url ?? "/", "http://localhost").searchParams; const limit = Number(query.get("limit") ?? 20); return { keyword: query.get("keyword") ?? undefined, city: query.get("city") ?? undefined, tag: query.get("tag") ?? undefined, limit: Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.trunc(limit))) : 20 }; }
 async function readRequestPayload(req: IncomingMessage): Promise<{ fields: Record<string, string>; files: KnowledgeUpload[] }> {
   if (!(req.headers["content-type"] ?? "").startsWith("multipart/form-data")) return { fields: (await readBody(req)) as Record<string, string>, files: [] };
   return readMultipart(req);
@@ -347,5 +360,5 @@ async function readMultipart(req: IncomingMessage): Promise<{ fields: Record<str
   if (!Object.keys(fields).length && !files.length) throw new ChatError("body_required", 400);
   return { fields, files };
 }
-export async function startPowuServer(options: Options = {}): Promise<Server> { const pool = createPool(); await ensureSchema(pool); const evidence = new EvidenceApplication(new EvidenceService(), new PostgresEvidenceRepository(pool)); const capabilityRegistry = options.capabilityRegistry ?? createDefaultCapabilityRegistry({ profile: new PostgresProfileRepository(pool), evidence, career: new PostgresCareerRepository(pool), learning: new PostgresLearningRepository(pool) }); const service = options.chatService ?? new ChatService(new PostgresChatStore(pool), new PiChatRuntime({ capabilityRegistry, promptContext: options.promptContext })); const server = createPowuServer({ ...options, capabilityRegistry, chatService: service, knowledgeStore: options.knowledgeStore ?? new PostgresKnowledgeStore(pool), readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }) }); server.once("close", () => void pool.end()); await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); }); }); return server; }
+export async function startPowuServer(options: Options = {}): Promise<Server> { const pool = createPool(); await ensureSchema(pool); const evidence = new EvidenceApplication(new EvidenceService(), new PostgresEvidenceRepository(pool)); const capabilityRegistry = options.capabilityRegistry ?? createDefaultCapabilityRegistry({ profile: new PostgresProfileRepository(pool), evidence, career: new PostgresCareerRepository(pool), learning: new PostgresLearningRepository(pool) }); const service = options.chatService ?? new ChatService(new PostgresChatStore(pool), new PiChatRuntime({ capabilityRegistry, promptContext: options.promptContext })); const server = createPowuServer({ ...options, catalog: options.catalog ?? new PostgresCatalogRepository(pool), capabilityRegistry, chatService: service, knowledgeStore: options.knowledgeStore ?? new PostgresKnowledgeStore(pool), readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }) }); server.once("close", () => void pool.end()); await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); }); }); return server; }
 if (process.argv[1] === fileURLToPath(import.meta.url)) startPowuServer().catch(error => { console.error(error); process.exitCode = 1; });

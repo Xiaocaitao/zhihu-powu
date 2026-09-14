@@ -56,3 +56,33 @@ test("growth prompt defines the learning assistant chain", async () => {
   assert.match(prompt, /先调用 update_learning_task 更新状态/);
   assert.match(prompt, /同一 taskId 调用 record_learning_evidence/);
 });
+
+test("learning workflow derives a guarded stage from user intent", async () => {
+  const { deriveLearningWorkflowState, workflowHint } = await import("../src/agent/workflows/learning-workflow.ts");
+  assert.equal(deriveLearningWorkflowState("我要学习 PostgreSQL 性能优化"), "goal_detected");
+  assert.equal(deriveLearningWorkflowState("请生成两周 trial 学习计划草案并保存"), "draft_ready");
+  assert.equal(deriveLearningWorkflowState("确认激活这份学习计划"), "active");
+  assert.match(workflowHint("awaiting_confirmation"), /不要调用确认或其他写入工具/);
+});
+
+test("learning workflow gates task and evidence writes by stage", async () => {
+  const { adaptDomainCapabilities } = await import("../src/agent/tools/domain-adapter.ts");
+  const capability = { name: "record_learning_evidence", description: "", inputSchema: { type: "object" }, execute: async () => ({ ok: true, changed: true, domain: "evidence", status: "applied", summary: "saved" }) } as any;
+  const [tool] = adaptDomainCapabilities([capability], { ownerId: "o", sessionId: "s", requestId: "r", operationKey: "k" }, undefined, () => ({ allowed: false, summary: "需要先明确保存" }));
+  const result = await tool.execute("id", {}, new AbortController().signal) as any;
+  assert.equal(result.details.error.code, "WORKFLOW_STAGE_REQUIRED");
+});
+
+test("learning workflow rejects a final plan before activation stage", async () => {
+  const { adaptDomainCapabilities } = await import("../src/agent/tools/domain-adapter.ts");
+  const capability = { name: "create_learning_plan", description: "", inputSchema: { type: "object" }, execute: async () => ({ ok: true, changed: true, domain: "learning", status: "draft_created", summary: "saved" }) } as any;
+  const [tool] = adaptDomainCapabilities([capability], { ownerId: "o", sessionId: "s", requestId: "r", operationKey: "k" }, undefined, (name, args) => ({ allowed: name !== "create_learning_plan" || (args as any).mode !== "final", summary: "先保存 trial" }));
+  const result = await tool.execute("id", { mode: "final" }, new AbortController().signal) as any;
+  assert.equal(result.details.error.code, "WORKFLOW_STAGE_REQUIRED");
+});
+
+test("learning workflow requires Zhihu research before plan creation", async () => {
+  const { hasZhihuResearch } = await import("../src/agent/workflows/learning-workflow.ts");
+  assert.equal(hasZhihuResearch([]), false);
+  assert.equal(hasZhihuResearch([{ toolName: "search_zhihu", result: "https://zhuanlan.zhihu.com/p/1" }]), true);
+});
