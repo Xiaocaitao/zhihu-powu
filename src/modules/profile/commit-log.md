@@ -120,3 +120,9 @@
 - PostgreSQL Repository 支持 PoolClient 绑定，事务回调内查询复用同一客户端，并实现审计日志写入。
 - 新增增量迁移 `005-profile-audit.sql`，补齐审计和命令回执字段。
 - 类型检查通过，19 项 Profile 单元测试全部通过；真实 PostgreSQL 集成测试仍待数据库环境。
+
+## 2026-09-14 · Service 事务化写入闭环
+
+- Profile Service 写入入口统一通过 `withWriteTransaction` 执行。
+- 事实/目标写入、变更审计和幂等回执在同一事务中完成；事务内使用绑定 Repository，避免嵌套事务。
+- 类型检查通过，19 项单元测试全部通过。
