@@ -265,8 +265,8 @@ export function createPowuServer(options: Options = {}): Server {
         const input = chatRequestSchema.parse({ ...payload.fields, attachments: attachments.length ? attachments : undefined }); const controller = new AbortController(); const cancel = () => controller.abort(); request.once("aborted", cancel); response.once("close", cancel);
         response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", connection: "keep-alive", "x-accel-buffering": "no" });
         if (attachments.length && !response.destroyed) response.write(`event: attachments\ndata: ${JSON.stringify({ type: "attachments", attachments })}\n\n`);
-        await options.chatService.chat(owner, input, controller.signal, async event => { if (!response.destroyed && !response.writableEnded) response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`); }); response.end(); request.removeListener("aborted", cancel); response.removeListener("close", cancel);
-      } catch (error) { if (response.headersSent) { if (!response.writableEnded) { response.write(`event: error\ndata: ${JSON.stringify({ type: "error", error: error instanceof ChatError ? error.message : "chat_failed" })}\n\n`); response.end(); } return; } if (error instanceof ZodError || error instanceof SyntaxError || error instanceof ChatError) return send(response, error instanceof ChatError ? error.status : 400, { ok: false, error: error instanceof ChatError ? error.message : "invalid_request" }); console.error("chat failed", error); return send(response, 502, { ok: false, error: "chat_failed" }); }
+        await options.chatService.chat(owner, input, controller.signal, async event => { const publicEvent = publicChatEvent(event); if (publicEvent && !response.destroyed && !response.writableEnded) response.write(`event: ${publicEvent.type}\ndata: ${JSON.stringify(publicEvent)}\n\n`); }); response.end(); request.removeListener("aborted", cancel); response.removeListener("close", cancel);
+      } catch (error) { const publicError = publicChatError(error); if (response.headersSent) { if (!response.writableEnded) { response.write(`event: error\ndata: ${JSON.stringify({ type: "error", error: publicError })}\n\n`); response.end(); } return; } if (error instanceof ZodError || error instanceof SyntaxError || error instanceof ChatError) return send(response, error instanceof ChatError ? error.status : 400, { ok: false, error: publicError }); console.error("chat failed", error); return send(response, 502, { ok: false, error: publicError }); }
     }
   });
 }
@@ -328,6 +328,33 @@ function cookieOwner(req: IncomingMessage, res: ServerResponse) {
 }
 async function serve(res: ServerResponse, relative: string, type: string) { try { res.writeHead(200, { "content-type": type }); res.end(await readFile(new URL(relative, import.meta.url))); } catch { send(res, 404, { error: "not_found" }); } }
 function send(res: ServerResponse, status: number, body: unknown) { if (!res.headersSent) res.writeHead(status, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); }
+function publicChatEvent(event: Record<string, unknown>): Record<string, unknown> | null {
+  const type = typeof event.type === "string" ? event.type : "";
+  if (type === "text_delta") return { type, delta: typeof event.delta === "string" ? event.delta : "" };
+  if (type === "thinking_delta") return { type };
+  if (type === "session" || type === "complete") {
+    const publicEvent: Record<string, unknown> = { type };
+    for (const key of ["session_id", "request_id"]) if (typeof event[key] === "string") publicEvent[key] = event[key];
+    return publicEvent;
+  }
+  if (type === "tool_start" || type === "tool_update" || type === "tool_end") {
+    const publicEvent: Record<string, unknown> = { type };
+    for (const key of ["tool_call_id", "tool_name"]) if (typeof event[key] === "string") publicEvent[key] = event[key];
+    if (type === "tool_end") publicEvent.error = event.error === true;
+    return publicEvent;
+  }
+  return null;
+}
+function publicChatError(error: unknown): string {
+  if (error instanceof ChatError) {
+    if (error.message === "context_limit") return "当前会话内容较长，请新建会话后重试。";
+    if (error.message === "body_too_large") return "请求内容过大，请减少附件或文本后重试。";
+    if (error.message === "knowledge_unavailable") return "资料上传服务暂时不可用，请稍后重试。";
+    return "聊天请求暂时无法完成，请稍后重试。";
+  }
+  if (error instanceof ZodError || error instanceof SyntaxError) return "请求格式不正确，请检查后重试。";
+  return "聊天服务暂时不可用，请稍后重试。";
+}
 function catalogFilter(req: IncomingMessage): CatalogFilter { const query = new URL(req.url ?? "/", "http://localhost").searchParams; const limit = Number(query.get("limit") ?? 20); return { keyword: query.get("keyword") ?? undefined, city: query.get("city") ?? undefined, tag: query.get("tag") ?? undefined, limit: Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.trunc(limit))) : 20 }; }
 async function readRequestPayload(req: IncomingMessage): Promise<{ fields: Record<string, string>; files: KnowledgeUpload[] }> {
   if (!(req.headers["content-type"] ?? "").startsWith("multipart/form-data")) return { fields: (await readBody(req)) as Record<string, string>, files: [] };

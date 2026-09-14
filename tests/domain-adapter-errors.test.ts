@@ -12,6 +12,8 @@ test("业务工具参数错误返回不可重试的结构化结果", async () =>
   assert.equal(content.type, "text");
   const body = JSON.parse(content.text);
   assert.equal(body.ok, false);
-  assert.equal(body.error.code, "INVALID_ARGUMENT");
-  assert.equal(body.error.retryable, false);
+  assert.equal(body.summary, "用户画像暂时无法保存，请稍后重试。");
+  assert.equal("error" in body, false);
+  assert.equal(result.details.error.code, "INVALID_ARGUMENT");
+  assert.equal(result.details.error.retryable, false);
 });
