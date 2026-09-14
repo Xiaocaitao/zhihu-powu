@@ -254,7 +254,7 @@ export type GetUserProfileInput = {
 };
 
 export type GetProfileCompletionInput = {
-  includeMissing?: boolean; // 默认 true
+  includeMissingFields?: boolean; // 默认 true
 };
 ```
 
@@ -397,7 +397,7 @@ export type ProfileCompletionDTO = {
 };
 ```
 
-完善度反映信息提供情况，不代表技能得分或就业匹配度。`includeMissing: false` 时不返回两个 missing 字段。内部计算口径见文末补充说明。
+完善度反映信息提供情况，不代表技能得分或就业匹配度。`includeMissingFields: false` 时不返回两个 missing 字段。内部计算口径见文末补充说明。
 
 ### 3.4 写入返回定义
 
