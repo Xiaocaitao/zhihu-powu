@@ -20,9 +20,9 @@ export const growthWorkflow = `成长规划工作方式：
 10. 各模块工具只通过工具契约交互，不直接访问数据库；不要把 ownerId、令牌或内部上下文放进模型生成的参数。`;
 
 // Only trusted server code can supply context. HTTP requests cannot supply system prompts.
-export type PromptContextInput = { message: string; sessionId: string; ownerId?: string; requestId?: string; attachments?: Array<{ original_name: string; remote_knowledge_base_id?: string | null; remote_recall_content_id?: string | null }> };
+export type PromptContextInput = { message: string; sessionId: string; workflowHint?: string; ownerId?: string; requestId?: string; attachments?: Array<{ original_name: string; remote_knowledge_base_id?: string | null; remote_recall_content_id?: string | null }> };
 export type PromptContext = (input: PromptContextInput) => Promise<string>;
 export async function buildPrompt(input: PromptContextInput, context?: PromptContext) {
   const attachmentHint = input.attachments?.length ? `本次上传资料已同步到知乎知识库；如需检索，使用返回的知识库 ID：${input.attachments.map(file => `${file.original_name}=${file.remote_knowledge_base_id ?? "unknown"}`).join("、")}。` : "";
-  return [personality, toolBoundary, growthWorkflow, attachmentHint, context ? await context(input) : ""].filter(Boolean).join("\n\n");
+  return [personality, toolBoundary, growthWorkflow, input.workflowHint ?? "", attachmentHint, context ? await context(input) : ""].filter(Boolean).join("\n\n");
 }

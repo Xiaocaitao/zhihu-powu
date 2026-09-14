@@ -14,6 +14,7 @@ export function adaptDomainCapabilities(
   capabilities: readonly DomainCapability[],
   context: CapabilityContext,
   approve?: (name: string, args: unknown, signal?: AbortSignal) => Promise<boolean>,
+  guard?: (name: string, args: unknown) => { allowed: boolean; summary: string },
 ): AgentTool[] {
   return capabilities.map(capability => ({
     name: capability.name,
@@ -23,6 +24,11 @@ export function adaptDomainCapabilities(
     replay: "never" as const,
     execute: async (_id, args, signal) => {
       signal?.throwIfAborted();
+      const guardResult = guard?.(capability.name, args);
+      if (guardResult && !guardResult.allowed) {
+        const result = { ok: false, changed: false, domain: "agent", status: "rejected", summary: guardResult.summary, error: { code: "WORKFLOW_STAGE_REQUIRED", message: guardResult.summary, retryable: false } };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
+      }
       if (capability.requiresConfirmation && !(await approve?.(capability.name, args, signal))) {
         const result = { ok: false, changed: false, domain: "agent", status: "confirmation_required", summary: "这项操作需要用户明确确认后才能执行", error: { code: "CONFIRMATION_REQUIRED", message: "请明确回复确认后再执行", retryable: false } };
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
