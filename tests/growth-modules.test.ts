@@ -41,6 +41,9 @@ test("Learning 草案列表保留真实 ID 并隔离 owner", async () => {
   assert.equal(plans[0].status, "draft");
   assert.notEqual(plans[0].id, "");
   assert.equal((await service.listPlans({ ...context, ownerId: "owner-2" })).length, 0);
+  const draft = plans[0];
+  draft.mode = "final"; draft.status = "active"; await repository.savePlan(draft);
+  assert.equal((await service.listPlans(context)).length, 0);
 });
 
 test("Career/Learning 读取工具返回统一能力结果协议", async () => {
