@@ -14,7 +14,7 @@
 
 ```text
 node node_modules/typescript/bin/tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck --allowImportingTsExtensions src/modules/profile/contracts.ts src/modules/profile/repository.ts src/modules/profile/service.ts src/modules/profile/capabilities.ts
-node --test --experimental-strip-types src/modules/profile/tests/profile.test.ts
+node --test --experimental-strip-types src/modules/profile/tests/profile.test.ts src/modules/profile/tests/request-hash.test.ts
 ```
 
-当前 Profile 独立类型检查通过，单元测试 10 项全部通过。
+当前 Profile 独立类型检查通过，单元测试 19 项全部通过。
