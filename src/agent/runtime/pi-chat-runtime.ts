@@ -69,9 +69,10 @@ export class PiChatRuntime implements ChatRuntime {
       initialState: { systemPrompt, model: this.model, thinkingLevel: "low", messages: input.history as AgentMessage[], tools: [
         // Zhihu uploads/OAuth keep their separate trusted-host approval path.
         ...adaptTools(createZhihuTools(this.client)),
-        ...(input.context && this.capabilityRegistry ? adaptDomainCapabilities(this.capabilityRegistry.forContext(input.context), input.context, approve, (name) => {
+        ...(input.context && this.capabilityRegistry ? adaptDomainCapabilities(this.capabilityRegistry.forContext(input.context), input.context, approve, (name, args) => {
           if (name === "update_learning_task" && learningState !== "task_completed") return { allowed: false, summary: "请先明确说明已完成哪个学习任务及实际用时" };
           if (name === "record_learning_evidence" && learningState !== "evidence_recorded") return { allowed: false, summary: "请先明确要求保存具体学习经历，并提供活动内容和时间" };
+          if (name === "create_learning_plan" && (args as { mode?: string })?.mode === "final" && learningState !== "active") return { allowed: false, summary: "首次学习计划必须先保存为 trial 草案，完成试学并明确确认后才能生成正式计划" };
           return { allowed: true, summary: "" };
         }) : []),
       ] },

@@ -72,3 +72,11 @@ test("learning workflow gates task and evidence writes by stage", async () => {
   const result = await tool.execute("id", {}, new AbortController().signal) as any;
   assert.equal(result.details.error.code, "WORKFLOW_STAGE_REQUIRED");
 });
+
+test("learning workflow rejects a final plan before activation stage", async () => {
+  const { adaptDomainCapabilities } = await import("../src/agent/tools/domain-adapter.ts");
+  const capability = { name: "create_learning_plan", description: "", inputSchema: { type: "object" }, execute: async () => ({ ok: true, changed: true, domain: "learning", status: "draft_created", summary: "saved" }) } as any;
+  const [tool] = adaptDomainCapabilities([capability], { ownerId: "o", sessionId: "s", requestId: "r", operationKey: "k" }, undefined, (name, args) => ({ allowed: name !== "create_learning_plan" || (args as any).mode !== "final", summary: "先保存 trial" }));
+  const result = await tool.execute("id", { mode: "final" }, new AbortController().signal) as any;
+  assert.equal(result.details.error.code, "WORKFLOW_STAGE_REQUIRED");
+});
