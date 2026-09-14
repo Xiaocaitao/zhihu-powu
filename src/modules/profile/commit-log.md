@@ -98,3 +98,11 @@
 - 新增 Profile 持久化集成测试清单，覆盖真实 PostgreSQL 读写、事务回滚、幂等回放、并发和服务端回读。
 - 新增 `hashProfileCommand`，按命令名、业务载荷和 expectedVersion 生成稳定 SHA-256 请求摘要。
 - 新增命令哈希单元测试；Profile 类型检查通过，16 项测试全部通过。
+
+## 2026-09-14 · 命令幂等回执实现
+
+- Service 写入入口按 `ownerId + idempotencyKey` 查询回执并计算请求哈希。
+- 相同请求回放原结果，载荷不同返回 `DUPLICATE_REQUEST`。
+- Memory 与 PostgreSQL Repository 均提供回执读写；新增增量迁移补齐命令名和请求 ID 字段。
+- Profile 独立类型检查通过，18 项单元测试全部通过。
+- PostgreSQL 并发唯一约束、事务回滚和真实数据库集成测试已记录在 `docs/Profile-持久化集成测试清单.md`，待数据库环境执行。
