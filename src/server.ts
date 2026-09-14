@@ -23,7 +23,16 @@ import { PostgresCareerRepository } from "./modules/career/postgres-repository.t
 import { PostgresLearningRepository } from "./modules/learning/postgres-repository.ts";
 import { PostgresEvidenceRepository } from "./modules/evidence/postgres-repository.ts";
 import { EvidenceApplication } from "./modules/evidence/application.ts";
-import { EvidenceService } from "./modules/evidence/service.ts";
+import { handleEvidenceHttp } from "./modules/evidence/http.ts";
+import { createEvidenceService } from "./modules/evidence/defaults.ts";
+import { createEvidencePorts } from "./app/evidence-ports.ts";
+import { MockEvidenceGeneration } from "./modules/evidence/generation.ts";
+import { createDoubaoStructuredExecutor } from "./llm/doubao.ts";
+import { createLlmInvoker } from "./llm/invoker.ts";
+import { ProfileService } from "./modules/profile/service.ts";
+import { PostgresSkillRepository } from "./modules/skills/repository.ts";
+import { SharedSkills } from "./modules/skills/service.ts";
+import { initialSkillDefinitions } from "./modules/skills/definitions.ts";
 import { PostgresCatalogRepository } from "./modules/catalog/repository.ts";
 import type { CatalogFilter } from "./modules/catalog/contracts.ts";
 
@@ -43,6 +52,13 @@ export function createPowuServer(options: Options = {}): Server {
     if (path === "/readyz") { try { await options.readiness?.(); return send(res, 200, { ok: true }); } catch { return send(res, 503, { ok: false }); } }
     if (path === "/" && req.method === "GET") return serve(res, "../public/index.html", "text/html; charset=utf-8");
     if (path.startsWith("/assets/") && req.method === "GET") { const name = path.slice(8); if (!name || name.includes("..") || name.includes("\\")) return send(res, 404, { error: "not_found" }); const types: Record<string,string> = { ".js":"text/javascript; charset=utf-8", ".gif":"image/gif", ".jpg":"image/jpeg", ".png":"image/png" }; return serve(res, `../public/assets/${name}`, types[name.slice(name.lastIndexOf(".")).toLowerCase()] ?? "application/octet-stream"); }
+    // 成长空间原型页：固定白名单，供本地与部署环境直接访问两个页面。
+    const prototypePages: Record<string, string> = {
+      "/learning-platform-prototype.html": "../public/learning-platform-prototype.html",
+      "/evidence-learning-records.html": "../public/evidence-learning-records.html",
+      "/evidence-mock-interview.html": "../public/evidence-mock-interview.html",
+    };
+    if (req.method === "GET" && prototypePages[path]) return serve(res, prototypePages[path], "text/html; charset=utf-8");
     if (path === "/api/auth/zhihu/status" && req.method === "GET") {
       const session = oauthSession(req, res);
       const authorized = Boolean(session.expiresAt && session.expiresAt > Date.now() && session.profile);
@@ -123,6 +139,15 @@ export function createPowuServer(options: Options = {}): Server {
         createReadStream(file.path).pipe(res);
       } catch { return send(res, 404, { error: "file_missing" }); }
       return;
+    }    if (path.startsWith("/api/evidence/")) {
+      const result = await handleEvidenceHttp({
+        method: req.method ?? "GET", path,
+        query: new URL(req.url ?? "/", "http://localhost").searchParams,
+        operationKey: req.headers["idempotency-key"],
+        ifMatch: req.headers["if-match"],
+        readJson: () => readBody(req),
+      }, { ownerId: authenticatedOwner(req, res), requestId: randomUUID() }, capabilityRegistry);
+      return send(res, result.status, result.body);
     }    if (path === "/api/growth/profile" && req.method === "GET") {
       if (!capabilityRegistry) return send(res, 503, { ok: false, error: "growth_unavailable" });
       const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
@@ -172,7 +197,8 @@ export function createPowuServer(options: Options = {}): Server {
       try {
         const result = await capability.execute(context, {});
         if (!result.ok) return send(res, 502, { ok: false, error: "records_read_failed" });
-        return send(res, 200, { ok: true, items: (result.data as { items?: unknown[] } | undefined)?.items ?? [] });
+        const data = result.data as { page?: { items?: unknown[] } } | undefined;
+        return send(res, 200, { ok: true, items: data?.page?.items ?? [] });
       } catch (error) { console.error("records read failed", error); return send(res, 502, { ok: false, error: "records_read_failed" }); }
     }
     if (path === "/api/growth/interviews" && req.method === "GET") {
@@ -180,7 +206,7 @@ export function createPowuServer(options: Options = {}): Server {
       const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
       const records = capabilityRegistry.list().find(capability => capability.name === "get_interview_records");
       if (!records) return send(res, 503, { ok: false, error: "interview_unavailable" });
-      try { const result = await records.execute(context, {}); if (!result.ok) return send(res, 502, { ok: false, error: "interview_read_failed" }); const data = result.data as { items?: unknown[]; session?: unknown } | undefined; return send(res, 200, { ok: true, items: data?.items ?? [], session: data?.session ?? null }); }
+      try { const result = await records.execute(context, {}); if (!result.ok) return send(res, 502, { ok: false, error: "interview_read_failed" }); const data = result.data as { page?: { items?: unknown[] }; session?: unknown } | undefined; return send(res, 200, { ok: true, items: data?.page?.items ?? [], session: data?.session ?? null }); }
       catch (error) { console.error("interview read failed", error); return send(res, 502, { ok: false, error: "interview_read_failed" }); }
     }
     if (path === "/api/growth/jobs/library" && req.method === "GET") {
@@ -329,12 +355,34 @@ async function readMultipart(req: IncomingMessage): Promise<{ fields: Record<str
 export async function startPowuServer(options: Options = {}): Promise<Server> {
   const pool = createPool();
   await ensureSchema(pool);
-  const evidence = new EvidenceApplication(new EvidenceService(), new PostgresEvidenceRepository(pool));
+  const skillRepository = new PostgresSkillRepository(pool);
+  await skillRepository.install(initialSkillDefinitions);
+  const skills = new SharedSkills(skillRepository);
+  const knowledgeStore = options.knowledgeStore ?? new PostgresKnowledgeStore(pool);
+  const learningRepository = new PostgresLearningRepository(pool);
+  const careerRepository = new PostgresCareerRepository(pool);
+  const profileRepository = new PostgresProfileRepository(pool);
+  // A configured model backs generation. Without one the module reports the
+  // dependency as unavailable; the deterministic generator needs an explicit
+  // EVIDENCE_GENERATION=mock opt-in and is never a silent production fallback.
+  const llmExecutor = createDoubaoStructuredExecutor();
+  const evidence = new EvidenceApplication(new PostgresEvidenceRepository(pool), createEvidenceService({
+    ...(llmExecutor ? { llm: createLlmInvoker(llmExecutor) } : {}),
+    ...(!llmExecutor && process.env.EVIDENCE_GENERATION === "mock" ? { generation: new MockEvidenceGeneration() } : {}),
+    ports: createEvidencePorts({
+      learning: learningRepository,
+      career: careerRepository,
+      profile: new ProfileService(profileRepository),
+      skills,
+      knowledge: knowledgeStore,
+    }),
+  }));
   const applications = options.applications ?? createDefaultApplications({
-    profile: new PostgresProfileRepository(pool),
+    profile: profileRepository,
     evidence,
-    career: new PostgresCareerRepository(pool),
-    learning: new PostgresLearningRepository(pool),
+    skills,
+    career: careerRepository,
+    learning: learningRepository,
     careerApplication: options.careerApplication,
   });
   const capabilityRegistry = options.capabilityRegistry ?? applications.capabilityRegistry;
@@ -345,7 +393,7 @@ export async function startPowuServer(options: Options = {}): Promise<Server> {
     catalog: options.catalog ?? new PostgresCatalogRepository(pool),
     applications: { careerApplication, capabilityRegistry },
     chatService: service,
-    knowledgeStore: options.knowledgeStore ?? new PostgresKnowledgeStore(pool),
+    knowledgeStore,
     readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }),
   });
   server.once("close", () => void pool.end());

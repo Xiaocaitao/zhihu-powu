@@ -3,9 +3,13 @@ import { createProfileCapabilities } from "../modules/profile/capabilities.ts";
 import { MemoryProfileRepository, type ProfileRepository } from "../modules/profile/repository.ts";
 import { ProfileService } from "../modules/profile/service.ts";
 import { createEvidenceCapabilities } from "../modules/evidence/capabilities.ts";
-import { EvidenceService } from "../modules/evidence/service.ts";
 import { EvidenceApplication } from "../modules/evidence/application.ts";
-import { MemoryEvidenceRepository } from "../modules/evidence/repository.ts";
+import { createEvidenceApplication } from "../modules/evidence/defaults.ts";
+import { MockEvidenceGeneration, type EvidenceGenerationPort } from "../modules/evidence/generation.ts";
+import { SharedSkills } from "../modules/skills/service.ts";
+import { MemorySkillRepository } from "../modules/skills/repository.ts";
+import { initialSkillDefinitions } from "../modules/skills/definitions.ts";
+import { createSkillCapabilities } from "../modules/skills/capabilities.ts";
 import { createCareerCapabilities } from "../modules/career/capabilities.ts";
 import { CareerService } from "../modules/career/service.ts";
 import { MemoryCareerRepository, type CareerRepository } from "../modules/career/repository.ts";
@@ -22,7 +26,9 @@ export type DefaultApplications = {
 
 export type DefaultDependencies = {
   profile?: ProfileRepository;
-  evidence?: EvidenceService | EvidenceApplication;
+  evidence?: EvidenceApplication;
+  evidenceGeneration?: EvidenceGenerationPort;
+  skills?: SharedSkills;
   career?: CareerRepository;
   learning?: LearningRepository;
   careerApplication?: CareerApplication;
@@ -30,7 +36,7 @@ export type DefaultDependencies = {
 
 function createQueries(
   profileService: ProfileService,
-  evidence: EvidenceService | EvidenceApplication,
+  evidence: EvidenceApplication,
   learning: LearningService,
 ): { profileQuery: ProfileQuery; evidenceQuery: EvidenceQuery; learningProgressQuery: LearningProgressQuery } {
   const profileQuery: ProfileQuery = {
@@ -52,18 +58,7 @@ function createQueries(
   };
 
   const evidenceQuery: EvidenceQuery = {
-    async getSkillEvidenceSnapshot(ctx: CareerContext, input) {
-      if (evidence instanceof EvidenceApplication) return evidence.getSkillEvidenceSnapshot(ctx, input);
-      return input.skillCodes.map(skillCode => {
-        const item = evidence.getSkillEvidence(ctx, skillCode).data?.items[0];
-        return {
-          skillCode,
-          evidenceIds: item?.recordIds ?? [],
-          evidenceCount: item?.recordIds.length ?? 0,
-          support: item?.support ?? "insufficient",
-        };
-      });
-    },
+    getSkillEvidenceSnapshot: (ctx, input) => evidence.getSkillEvidenceSnapshot(ctx, input),
   };
 
   const learningProgressQuery: LearningProgressQuery = {
@@ -84,8 +79,13 @@ function createQueries(
 
 export function createDefaultApplications(dependencies: DefaultDependencies = {}): DefaultApplications {
   const profile = new ProfileService(dependencies.profile ?? new MemoryProfileRepository());
-  const evidence = dependencies.evidence ?? new EvidenceApplication(new EvidenceService(), new MemoryEvidenceRepository());
   const learning = new LearningService(dependencies.learning ?? new MemoryLearningRepository());
+  const skills = dependencies.skills ?? new SharedSkills(new MemorySkillRepository(initialSkillDefinitions));
+  // Development and tests use a deterministic generator; production injects the model adapter.
+  const evidence = dependencies.evidence ?? createEvidenceApplication({
+    generation: dependencies.evidenceGeneration ?? new MockEvidenceGeneration(),
+    ports: { skills },
+  });
   const careerApplication = dependencies.careerApplication ?? new CareerService(
     dependencies.career ?? new MemoryCareerRepository(),
     createQueries(profile, evidence, learning),
@@ -95,6 +95,7 @@ export function createDefaultApplications(dependencies: DefaultDependencies = {}
     () => createCareerCapabilities(careerApplication) as never,
     () => createLearningCapabilities(learning) as never,
     () => createEvidenceCapabilities(evidence) as never,
+    () => createSkillCapabilities(skills),
   ]);
   return { careerApplication, capabilityRegistry };
 }

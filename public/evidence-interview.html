@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>成长空间 · 学习记录与模拟面试</title>
+<style>
+:root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:#172b4d;background:#f4f7fb;--blue:#1677e8;--deep:#0f5fc7;--ink:#172b4d;--muted:#71839d;--line:#e4ebf5;--soft:#edf5ff;--green:#20a477;--amber:#d99027;--shadow:0 12px 30px rgba(35,70,115,.08)}
+*{box-sizing:border-box}body{margin:0;min-width:320px}button,textarea{font:inherit}.app{min-height:100vh;display:grid;grid-template-columns:248px minmax(0,1fr)}
+.sidebar{background:#fff;border-right:1px solid var(--line);padding:26px 16px}.brand{display:flex;align-items:center;gap:10px;margin:0 10px 38px;font-size:18px;font-weight:750}.logo{display:grid;place-items:center;width:36px;height:36px;border-radius:12px;color:#fff;background:linear-gradient(145deg,#4ba2ff,var(--deep));box-shadow:0 7px 16px #1677e833}.nav{display:grid;gap:5px}.nav button{width:100%;border:0;background:transparent;color:#667991;text-align:left;padding:12px 14px;border-radius:11px;cursor:pointer;transition:.2s}.nav button:hover,.nav button.active{color:var(--blue);background:var(--soft);font-weight:650}.nav-icon{display:inline-grid;place-items:center;width:24px;margin-right:6px}.side-note{margin:28px 10px 0;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.8}
+main{min-width:0}.topbar{height:72px;padding:0 48px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}.crumb{font-size:14px;color:var(--muted)}.crumb strong{color:var(--ink)}.account{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#e1efff;color:var(--blue);font-weight:700}
+.content{max-width:1220px;margin:auto;padding:42px 48px 72px}.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:28px}.eyebrow{margin:0 0 9px;color:var(--blue);font-size:11px;font-weight:800;letter-spacing:.14em}.hero h1{margin:0 0 9px;font-size:32px;letter-spacing:-.03em}.hero p{margin:0;color:var(--muted)}.actions{display:flex;gap:10px;flex-wrap:wrap}.button{border:1px solid transparent;border-radius:10px;padding:11px 17px;cursor:pointer;transition:.2s}.button:hover{transform:translateY(-1px)}.button.primary{background:var(--blue);color:#fff;box-shadow:0 7px 16px #1677e82b}.button.secondary{background:#fff;border-color:#bcd8f7;color:var(--blue)}.button:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.tabs{display:flex;gap:8px;margin-bottom:20px}.tab{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:999px;padding:9px 18px;cursor:pointer}.tab.active{border-color:#bcd8f7;background:var(--soft);color:var(--blue);font-weight:700}.panel{display:none}.panel.active{display:block}.grid,.interview-layout{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.8fr);gap:20px}.stack{display:grid;gap:20px}.card{background:#fff;border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow);overflow:hidden}.card-head{display:flex;align-items:center;justify-content:space-between;padding:20px 23px;border-bottom:1px solid #edf1f6}.card-head h2{margin:0;font-size:16px}.badge{border-radius:999px;padding:5px 10px;background:var(--soft);color:var(--blue);font-size:11px}.body{padding:22px 23px}
+.timeline{position:relative;padding-left:19px}.timeline:before{content:"";position:absolute;left:4px;top:8px;bottom:8px;width:1px;background:#dce7f5}.timeline-item{position:relative;padding:0 0 25px}.timeline-item:last-child{padding-bottom:0}.dot{position:absolute;left:-19px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 4px #e6f1ff}.dot.green{background:var(--green);box-shadow:0 0 0 4px #e4f7ef}.dot.amber{background:var(--amber);box-shadow:0 0 0 4px #fff1dc}.timeline strong{display:block;font-size:14px}.timeline small{display:block;margin-top:5px;color:var(--muted);line-height:1.5}.review{color:var(--muted);line-height:1.9}.review strong{color:var(--ink)}.evidence{display:grid;gap:13px}.evidence-item{padding:15px;border:1px solid var(--line);border-radius:12px}.evidence-title{display:flex;justify-content:space-between;gap:12px;font-weight:650}.evidence-meta{margin-top:7px;color:var(--muted);font-size:12px}.state{font-size:11px;color:var(--green)}.state.pending{color:var(--amber)}
+.question{padding:26px}.question-top{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}.question h2{margin:20px 0;font-size:21px;line-height:1.55}.answer{width:100%;min-height:190px;padding:15px;border:1px solid #d5e2f1;border-radius:12px;resize:vertical;color:var(--ink);outline:0;transition:.2s}.answer:focus{border-color:#72b5f5;box-shadow:0 0 0 4px #e8f3ff}.question-actions{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:15px}.hint{color:var(--muted);font-size:12px;line-height:1.5}.feedback{margin-top:20px;padding:16px 18px;border:1px solid #dcecff;border-radius:12px;background:#f7fbff;color:#526987;line-height:1.75}.feedback strong{color:var(--ink)}.side{padding:20px}.side .card-head{padding:0 0 16px;border:0}.steps{display:grid;gap:8px}.step{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:10px;color:var(--muted);font-size:13px}.step.current{background:var(--soft);color:var(--blue);font-weight:650}.step-number{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#eef2f7;font-size:11px}.current .step-number{background:#cfe5ff;color:var(--blue)}
+@media(max-width:900px){.app{grid-template-columns:1fr}.sidebar{display:none}.topbar{padding:0 24px}.content{padding:30px 24px 55px}.hero{display:block}.actions{margin-top:18px}.grid,.interview-layout{grid-template-columns:1fr}}
+@media(max-width:520px){.content{padding:24px 16px 45px}.topbar{height:62px;padding:0 16px}.hero h1{font-size:26px}.card-head,.body,.question{padding-left:17px;padding-right:17px}.question-actions{align-items:stretch;flex-direction:column}.question-actions .button{width:100%}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+<div class="brand">
+<span class="logo">雾</span>
+<span>破雾成长</span>
+</div>
+<nav class="nav" aria-label="成长空间导航">
+<button type="button">
+<span class="nav-icon">⌂</span>首页</button>
+<button type="button">
+<span class="nav-icon">◌</span>画像与规划</button>
+<button type="button">
+<span class="nav-icon">↗</span>职业规划</button>
+<button type="button">
+<span class="nav-icon">✓</span>学习计划</button>
+<button class="active" type="button" data-tab="records">
+<span class="nav-icon">◷</span>学习记录</button>
+<button type="button" data-tab="interview">
+<span class="nav-icon">◉</span>模拟面试</button>
+<button type="button">
+<span class="nav-icon">▣</span>知识库</button>
+</nav>
+<p class="side-note">记录真实进展，沉淀能力证据，持续练习表达。</p>
+</aside>
+<main>
+<header class="topbar">
+<div class="crumb">
+<strong>成长空间</strong>
+<span>　/　学习记录与模拟面试</span>
+</div>
+<div class="account" aria-label="用户占位">?</div>
+</header>
+<div class="content">
+<section class="hero">
+<div>
+<p class="eyebrow">EVIDENCE &amp; INTERVIEW</p>
+<h1>让每一步成长都有依据。</h1>
+<p>查看学习轨迹、整理能力证据，并用文字面试检验表达与理解。</p>
+</div>
+<div class="actions">
+<button class="button secondary" type="button" disabled>生成阶段复盘</button>
+<button class="button primary" type="button" data-tab="interview">开始模拟面试</button>
+</div>
+</section>
+<div class="tabs" role="tablist">
+<button class="tab active" type="button" data-tab="records" role="tab" aria-selected="true">学习记录</button>
+<button class="tab" type="button" data-tab="interview" role="tab" aria-selected="false">模拟面试</button>
+</div>
+<section class="panel active" id="records" role="tabpanel">
+<div class="grid">
+<div class="stack">
+<article class="card">
+<div class="card-head">
+<h2>学习时间线</h2>
+<span class="badge">时间范围占位</span>
+</div>
+<div class="body">
+<div class="timeline">
+<div class="timeline-item">
+<i class="dot">
+</i>
+<strong>学习活动标题占位</strong>
+<small>发生时间占位 · 实际用时占位 · 来源占位</small>
+</div>
+<div class="timeline-item">
+<i class="dot green">
+</i>
+<strong>项目成果标题占位</strong>
+<small>部分完成或已完成 · 材料状态占位</small>
+</div>
+<div class="timeline-item">
+<i class="dot amber">
+</i>
+<strong>学习卡点或计划变化占位</strong>
+<small>关联任务占位 · 反馈来源占位</small>
+</div>
+</div>
+</div>
+</article>
+<article class="card">
+<div class="card-head">
+<h2>阶段复盘</h2>
+<span class="badge">复盘状态占位</span>
+</div>
+<div class="body review">
+<strong>这段时间的进展</strong>
+<br>进展摘要占位。<br>
+<br>
+<strong>需要关注的卡点</strong>
+<br>卡点与可能原因占位。<br>
+<br>
+<strong>下一步建议</strong>
+<br>建议内容占位，计划是否调整由学习计划模块决定。</div>
+</article>
+</div>
+<article class="card">
+<div class="card-head">
+<h2>能力证据</h2>
+<span class="badge">数量占位</span>
+</div>
+<div class="body evidence">
+<div class="evidence-item">
+<div class="evidence-title">
+<span>能力名称占位</span>
+<span class="state">已支持表现占位</span>
+</div>
+<div class="evidence-meta">证据来源占位 · 评估时间占位</div>
+</div>
+<div class="evidence-item">
+<div class="evidence-title">
+<span>能力名称占位</span>
+<span class="state pending">待验证</span>
+</div>
+<div class="evidence-meta">下一步验证方式占位</div>
+</div>
+<button class="button secondary" type="button" disabled>查看全部证据</button>
+</div>
+</article>
+</div>
+</section>
+<section class="panel" id="interview" role="tabpanel">
+<div class="interview-layout">
+<article class="card">
+<div class="card-head">
+<h2>模拟面试</h2>
+<span class="badge">训练范围占位</span>
+</div>
+<div class="question">
+<div class="question-top">
+<span>第 <b>题号占位</b> 题</span>
+<span>共 <b>题量占位</b> 题</span>
+</div>
+<h2>面试题目占位：请介绍一个你完成的项目，以及其中解决的具体问题。</h2>
+<textarea class="answer" placeholder="输入你的回答">
+</textarea>
+<div class="question-actions">
+<span class="hint">回答会被保存，并基于实际内容生成反馈。</span>
+<button class="button primary" type="button" disabled>提交回答</button>
+</div>
+<div class="feedback">
+<strong>本题反馈占位</strong>
+<br>知识理解、项目说明和表达建议将在回答提交后显示。</div>
+</div>
+</article>
+<aside class="card side">
+<div class="card-head">
+<h2>面试进度</h2>
+<span class="badge">状态占位</span>
+</div>
+<div class="steps">
+<div class="step current">
+<span class="step-number">1</span>当前题目占位</div>
+<div class="step">
+<span class="step-number">2</span>下一题占位</div>
+<div class="step">
+<span class="step-number">3</span>后续题目占位</div>
+<div class="step">
+<span class="step-number">…</span>剩余题目占位</div>
+</div>
+<button class="button secondary" type="button" disabled style="width:100%;margin-top:18px">结束并查看反馈</button>
+</aside>
+</div>
+</section>
+</div>
+</main>
+</div>
+<script>
+const tabs=[...document.querySelectorAll('[data-tab]')];const panels=[...document.querySelectorAll('.panel')];
+function selectTab(name){tabs.forEach(tab=>{const active=tab.dataset.tab===name;tab.classList.toggle('active',active);if(tab.getAttribute('role')==='tab')tab.setAttribute('aria-selected',String(active))});panels.forEach(panel=>panel.classList.toggle('active',panel.id===name));}
+tabs.forEach(tab=>tab.addEventListener('click',()=>selectTab(tab.dataset.tab)));
+</script>
+</body>
+</html>

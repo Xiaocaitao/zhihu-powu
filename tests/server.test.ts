@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve, sep } from "node:path";
 import test from "node:test";
 import { createPowuServer, resetOAuthSessionsForTests } from "../src/server.ts";
 import { ChatService } from "../src/modules/chat/service.ts";
@@ -70,7 +73,7 @@ test("interview growth endpoint returns ended interview history", async t => {
   assert.ok(start && finish);
   const token = "test-interview-owner";
   const owner = `anonymous:${createHash("sha256").update(token).digest("hex")}`;
-  const started = await start.execute({ ownerId: owner, requestId: "interview-start-test", operationKey: "interview-start-test" }, { target: { kind: "skills", id: "typescript" }, questionCount: 2 });
+  const started = await start.execute({ ownerId: owner, requestId: "interview-start-test", operationKey: "interview-start-test" }, { target: { kind: "skills", skillIds: ["skill-typescript"] }, questionCount: 2 });
   assert.equal(started.ok, true);
   const interviewId = (started.data as { interview?: { interviewId: string } }).interview?.interviewId;
   assert.ok(interviewId);
@@ -91,13 +94,14 @@ test("interview history reflects a submitted answer", async () => {
   assert.ok(start && submit && records);
   const owner = "interview-answer-history-owner";
   const context = { ownerId: owner, requestId: "interview-answer-history", operationKey: "interview-answer-history" };
-  const started = await start.execute(context, { target: { kind: "skills", id: "typescript" }, questionCount: 2 });
+  const started = await start.execute(context, { target: { kind: "skills", skillIds: ["skill-typescript"] }, questionCount: 2 });
   assert.equal(started.ok, true);
   const interview = (started.data as { interview: { interviewId: string; questions: Array<{ questionId: string }> } }).interview;
   const answered = await submit.execute({ ...context, requestId: "interview-answer-history-submit", operationKey: "interview-answer-history-submit" }, { interviewId: interview.interviewId, questionId: interview.questions[0].questionId, answer: "我完成过一次 TypeScript 服务重构。" });
   assert.equal(answered.ok, true);
   const listed = await records.execute({ ...context, requestId: "interview-answer-history-read", operationKey: "interview-answer-history-read" }, {});
-  assert.equal((listed.data as { items: Array<{ answeredCount: number }> }).items[0].answeredCount, 1);
+  const page = (listed.data as { page: { items: Array<{ answeredCount: number }> } }).page;
+  assert.equal(page.items[0].answeredCount, 1);
 });
 
 test("chat request rejects missing protocol fields", async t => {
@@ -184,18 +188,25 @@ test("signed OAuth cookie keeps the authenticated owner after a server restart",
 });
 
 test("knowledge files support multipart upload, owner isolation and inline preview", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "powu-knowledge-preview-"));
+  const previewPath = join(directory, "notes.txt");
+  await writeFile(previewPath, "hello", "utf8");
+  t.after(async () => {
+    assert.ok(resolve(directory).startsWith(resolve(tmpdir()) + sep) && directory.includes("powu-knowledge-preview-"));
+    await rm(directory, { recursive: true, force: true });
+  });
   const saved = new Map<string, { id: string; original_name: string; mime_type: string; size_bytes: number; url: string; created_at: string }[]>();
   const store: KnowledgeStore = {
     async save(owner, upload) { const file = { id: "00000000-0000-4000-8000-000000000099", original_name: upload.filename, mime_type: upload.contentType, size_bytes: upload.data.byteLength, url: "/api/knowledge/files/00000000-0000-4000-8000-000000000099", created_at: new Date().toISOString() }; saved.set(owner, [...(saved.get(owner) ?? []), file]); return file; },
     async list(owner) { return saved.get(owner) ?? []; },
-    async get(owner, id) { const file = saved.get(owner)?.find(item => item.id === id); return file ? { ...file, path: "/dev/null" } : null; },
+    async get(owner, id) { const file = saved.get(owner)?.find(item => item.id === id); return file ? { ...file, path: previewPath } : null; },
   };
   const server = createPowuServer({ knowledgeStore: store }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
   const body = new FormData(); body.append("file", new Blob(["hello"], { type: "text/plain" }), "notes.txt");
   const uploaded = await fetch(`http://127.0.0.1:${address.port}/api/knowledge/files`, { method: "POST", body }); assert.equal(uploaded.status, 201);
   const cookie = uploaded.headers.get("set-cookie")?.split(";", 1)[0]; assert.ok(cookie);
   const listed = await fetch(`http://127.0.0.1:${address.port}/api/knowledge/files`, { headers: { cookie } }); assert.equal((await listed.json()).files.length, 1);
-  const preview = await fetch(`http://127.0.0.1:${address.port}/api/knowledge/files/00000000-0000-4000-8000-000000000099`, { headers: { cookie } }); assert.equal(preview.status, 200); assert.equal(preview.headers.get("x-content-type-options"), "nosniff");
+  const preview = await fetch(`http://127.0.0.1:${address.port}/api/knowledge/files/00000000-0000-4000-8000-000000000099`, { headers: { cookie } }); assert.equal(preview.status, 200); assert.equal(preview.headers.get("x-content-type-options"), "nosniff"); assert.equal(await preview.text(), "hello");
   const hidden = await fetch(`http://127.0.0.1:${address.port}/api/knowledge/files/00000000-0000-4000-8000-000000000099`); assert.equal(hidden.status, 404);
 });
 
