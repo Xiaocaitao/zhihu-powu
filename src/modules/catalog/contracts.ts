@@ -1,0 +1,3 @@
+export type CatalogJob = { id: string; sourceId: string; title: string; companyName: string | null; city: string | null; employmentType: string | null; salaryText: string | null; description: string; requirements: string[]; responsibilities: string[]; tags: string[]; sourceUrl: string | null; collectedAt: string | null };
+export type CatalogInterview = { id: string; sourceId: string; title: string; content: string; companyName: string | null; jobTitle: string | null; city: string | null; interviewRound: string | null; result: string | null; questionCount: number | null; tags: string[]; sourceUrl: string | null; collectedAt: string | null };
+export type CatalogFilter = { keyword?: string; city?: string; tag?: string; limit?: number };
