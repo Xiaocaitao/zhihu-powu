@@ -81,13 +81,13 @@ export const saveProfileFactInputSchema = z.object({
   // the service rejected an otherwise valid user request.
   value: z.union([
     z.object({ text: nonEmpty }),
-    z.object({ items: z.array(nonEmpty) }),
+    z.object({ items: z.array(nonEmpty).min(1) }),
     z.object({ summary: nonEmpty }),
-    z.object({ hours: z.number().min(0).max(168) }),
+    z.object({ hours: z.number().nonnegative() }),
   ]),
   source: z.enum(["user_input", "user_confirmed", "assessment"]),
   isConfirmed: z.boolean().optional(),
-  evidenceRef: z.object({ evidenceId: nonEmpty, evaluatedAt: z.string().datetime({ offset: true }) }).optional(),
+  evidenceRef: z.object({ evidenceId: nonEmpty, evaluatedAt: nonEmpty }).optional(),
   expectedVersion: z.number().int().positive().optional(),
 });
 export const updateUserGoalInputSchema = z.union([
