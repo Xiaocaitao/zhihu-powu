@@ -87,9 +87,9 @@ export class PiChatRuntime implements ChatRuntime {
       if (event.type === "message_update") {
         const part = event.assistantMessageEvent;
         if (part.type === "text_delta") await emit({ type: "text_delta", delta: part.delta });
-        if (part.type === "thinking_delta") await emit({ type: "thinking_delta", delta: part.delta });
-      } else if (event.type === "tool_execution_start") await emit({ type: "tool_start", tool_call_id: event.toolCallId, tool_name: event.toolName, args: event.args });
-      else if (event.type === "tool_execution_update") await emit({ type: "tool_update", tool_call_id: event.toolCallId, tool_name: event.toolName, update: event.partialResult });
+        if (part.type === "thinking_delta") await emit({ type: "thinking_delta" });
+      } else if (event.type === "tool_execution_start") await emit({ type: "tool_start", tool_call_id: event.toolCallId, tool_name: event.toolName });
+      else if (event.type === "tool_execution_update") await emit({ type: "tool_update", tool_call_id: event.toolCallId, tool_name: event.toolName });
       else if (event.type === "tool_execution_end") await emit({ type: "tool_end", tool_call_id: event.toolCallId, tool_name: event.toolName, error: event.isError });
     });
     const abort = () => agent.abort();
