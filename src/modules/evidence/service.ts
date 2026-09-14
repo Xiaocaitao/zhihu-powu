@@ -544,24 +544,102 @@ export class EvidenceService {
     }
   }
 
+  /**
+   * Pure precondition check for answering a question. Safe to call inside a
+   * transaction because it never touches the generator: a concurrent writer
+   * may have advanced the session since the answer was prepared outside it.
+   */
+  checkAnswer(state: EvidenceState, interviewId: string, questionId: string, text: string):
+    | { ok: true; interview: Interview; replay: Interview["answers"][number] | null }
+    | { ok: false; result: CapabilityResult<never> } {
+    const interview = state.interviews.find(item => item.interviewId === interviewId);
+    if (!interview) return { ok: false, result: fail("NOT_FOUND", "面试不存在") };
+    const existing = interview.answers.find(answer => answer.questionId === questionId);
+    if (existing) {
+      if (existing.text.trim() !== text.trim()) {
+        return { ok: false, result: fail("INVALID_STATE", "该题已有回答且已提交内容不可改写；请刷新后查看最新状态，或开始新的训练") };
+      }
+      return { ok: true, interview, replay: existing };
+    }
+    if (interview.status !== "active") {
+      return { ok: false, result: fail("INVALID_STATE", interview.status === "preparation_failed" ? "题目尚未生成完成" : "面试已结束") };
+    }
+    const question = interview.questions.find(item => item.questionId === questionId);
+    if (!question) return { ok: false, result: fail("NOT_FOUND", "题目不存在") };
+    if (question.ordinal !== interview.answeredCount + 1) {
+      return { ok: false, result: fail("INVALID_STATE", "只能回答当前题目") };
+    }
+    return { ok: true, interview, replay: null };
+  }
+
+  /** Pure aggregate update; the generated feedback and report are passed in. */
+  applyAnswer(
+    interview: Interview, questionId: string, text: string,
+    feedback: Interview["answers"][number]["feedback"], createdAt: string,
+    summary: Pick<Interview, "report" | "reportStatus" | "recovery"> | null,
+  ): { interview: Interview; answer: Interview["answers"][number] } {
+    const answer = { answerId: feedback?.answerId ?? randomUUID(), questionId, text, feedback, createdAt };
+    const updated: Interview = {
+      ...interview,
+      answers: [...interview.answers, answer],
+      answeredCount: interview.answeredCount + 1,
+      version: interview.version + 1,
+    };
+    const answeredAll = updated.answeredCount >= (updated.totalQuestions ?? 0);
+    if (answeredAll) {
+      updated.status = "completed";
+      updated.currentQuestion = null;
+      if (summary) Object.assign(updated, summary);
+    } else {
+      updated.currentQuestion = updated.questions[updated.answeredCount] ?? null;
+    }
+    return { interview: updated, answer: updated.answers.at(-1)! };
+  }
+
+  checkFinish(state: EvidenceState, interviewId: string):
+    | { ok: true; interview: Interview }
+    | { ok: false; result: CapabilityResult<never> } {
+    const interview = state.interviews.find(item => item.interviewId === interviewId);
+    if (!interview) return { ok: false, result: fail("NOT_FOUND", "面试不存在") };
+    if (interview.status === "preparing" || interview.status === "preparation_failed") {
+      return { ok: false, result: fail("INVALID_STATE", "该面试还没有可用题目，无法结束") };
+    }
+    return { ok: true, interview };
+  }
+
+  applyFinish(
+    interview: Interview, reason: string | undefined,
+    summary: Pick<Interview, "report" | "reportStatus" | "recovery"> | null,
+  ): { interview: Interview } {
+    const ended: Interview = {
+      ...interview, status: "ended_early", endedEarly: true, endedAt: this.now(),
+      version: interview.version + 1, currentQuestion: null,
+      focus: reason ? `${interview.focus ? `${interview.focus}；` : ""}结束原因：${reason}` : interview.focus,
+    };
+    if (summary) {
+      Object.assign(ended, summary);
+    } else {
+      ended.reportStatus = "not_started";
+      ended.coverage = {
+        ...ended.coverage, complete: false,
+        missing: [...ended.coverage.missing, { source: "interview", reason: "本场没有已回答题目，未生成整场报告" }],
+      };
+    }
+    return { interview: ended };
+  }
+
   async submitAnswer(ctx: EvidenceContext, state: EvidenceState, interviewId: string, questionId: string, text: string): Promise<CapabilityResult<{
     interview: Interview; answer: Interview["answers"][number]; feedback: Interview["answers"][number]["feedback"];
     nextQuestion: Interview["questions"][number] | null; report: Interview["report"]; recovery?: RecoveryHint;
   }>> {
-    const interview = state.interviews.find(item => item.interviewId === interviewId);
-    if (!interview) return fail("NOT_FOUND", "面试不存在");
-    const existing = interview.answers.find(answer => answer.questionId === questionId);
-    if (existing) {
-      if (existing.text.trim() !== text.trim()) return fail("INVALID_STATE", "已提交的回答不能改写，请开始新的训练");
-      return ok({ interview, answer: existing, feedback: existing.feedback, nextQuestion: null, report: interview.report },
+    const check = this.checkAnswer(state, interviewId, questionId, text);
+    if (!check.ok) return check.result;
+    if (check.replay) {
+      return ok({ interview: check.interview, answer: check.replay, feedback: check.replay.feedback, nextQuestion: null, report: check.interview.report },
         "重复提交，返回已有回答");
     }
-    if (interview.status !== "active") {
-      return fail("INVALID_STATE", interview.status === "preparation_failed" ? "题目尚未生成完成" : "面试已结束");
-    }
-    const question = interview.questions.find(item => item.questionId === questionId);
-    if (!question) return fail("NOT_FOUND", "题目不存在");
-    if (question.ordinal !== interview.answeredCount + 1) return fail("INVALID_STATE", "只能回答当前题目");
+    const interview = check.interview;
+    const question = interview.questions.find(item => item.questionId === questionId)!;
     const answerId = randomUUID();
     const createdAt = this.now();
     let feedback: Interview["answers"][number]["feedback"];
@@ -579,57 +657,42 @@ export class EvidenceService {
       };
       recovery = { toolName: "get_interview_feedback", entityId: interviewId, action: "重新生成该题反馈", retryable: failure.retryable };
     }
-    let updated: Interview = {
+    const pending: Interview = {
       ...interview,
       answers: [...interview.answers, { answerId, questionId, text, feedback, createdAt }],
       answeredCount: interview.answeredCount + 1,
       version: interview.version + 1,
     };
-    const answeredAll = updated.answeredCount >= (updated.totalQuestions ?? 0);
-    if (answeredAll) {
-      updated.status = "completed";
-      updated.currentQuestion = null;
-      updated = { ...updated, ...(await this.buildReport(updated)) };
-    } else {
-      updated.currentQuestion = updated.questions[updated.answeredCount] ?? null;
-    }
-    const savedAnswer = updated.answers.at(-1)!;
+    const answeredAll = pending.answeredCount >= (pending.totalQuestions ?? 0);
+    const summary = answeredAll ? await this.buildReport(pending) : null;
+    const applied = this.applyAnswer(interview, questionId, text, feedback, createdAt, summary);
     return ok({
-      interview: updated, answer: savedAnswer, feedback: savedAnswer.feedback,
-      nextQuestion: updated.currentQuestion, report: updated.report, ...(recovery ? { recovery } : {}),
+      interview: applied.interview, answer: applied.answer, feedback: applied.answer.feedback,
+      nextQuestion: applied.interview.currentQuestion, report: applied.interview.report, ...(recovery ? { recovery } : {}),
     }, recovery ? "回答已保存，但本题反馈生成失败" : "回答已保存",
-    { changed: true, status: "applied", entityId: answerId, version: updated.version });
+    { changed: true, status: "applied", entityId: answerId, version: applied.interview.version });
   }
 
   async finishInterview(ctx: EvidenceContext, state: EvidenceState, interviewId: string, reason?: string): Promise<CapabilityResult<{
     interview: Interview; report: Interview["report"]; recovery?: RecoveryHint;
   }>> {
-    const interview = state.interviews.find(item => item.interviewId === interviewId && item.ownerId === ctx.ownerId);
-    if (!interview) return fail("NOT_FOUND", "面试不存在");
-    if (interview.status === "preparing" || interview.status === "preparation_failed") {
-      return fail("INVALID_STATE", "该面试还没有可用题目，无法结束");
-    }
+    const check = this.checkFinish(state, interviewId);
+    if (!check.ok) return check.result;
+    const interview = check.interview;
     if (interview.status === "completed" || interview.status === "ended_early") {
       return ok({ interview, report: interview.report }, "面试此前已结束");
     }
-    let ended: Interview = {
-      ...interview, status: "ended_early", endedEarly: true, endedAt: this.now(),
-      version: interview.version + 1, currentQuestion: null,
-      focus: reason ? `${interview.focus ? `${interview.focus}；` : ""}结束原因：${reason}` : interview.focus,
-    };
+    let summary: Pick<Interview, "report" | "reportStatus" | "recovery"> | null = null;
     let recovery: RecoveryHint | undefined;
-    if (ended.answers.length) {
-      ended = { ...ended, ...(await this.buildReport(ended)) };
-      if (ended.reportStatus === "failed") {
+    if (interview.answers.length) {
+      summary = await this.buildReport(interview);
+      if (summary.reportStatus === "failed") {
         recovery = { toolName: "finish_interview", entityId: interviewId, action: "重新生成整场报告", retryable: true };
       }
-    } else {
-      ended.reportStatus = "not_started";
-      ended.coverage.complete = false;
-      ended.coverage.missing.push({ source: "interview", reason: "本场没有已回答题目，未生成整场报告" });
     }
-    return ok({ interview: ended, report: ended.report, ...(recovery ? { recovery } : {}) }, "模拟面试已结束",
-      { changed: true, status: "applied", entityId: interviewId, version: ended.version });
+    const applied = this.applyFinish(interview, reason, summary);
+    return ok({ interview: applied.interview, report: applied.interview.report, ...(recovery ? { recovery } : {}) }, "模拟面试已结束",
+      { changed: true, status: "applied", entityId: interviewId, version: applied.interview.version });
   }
 
   getFeedback(ctx: EvidenceContext, state: EvidenceState, interviewId: string, questionId?: string): CapabilityResult<

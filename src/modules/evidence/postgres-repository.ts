@@ -204,6 +204,18 @@ export class PostgresEvidenceRepository implements EvidenceRepository {
 
   async saveInterview(interview: Interview): Promise<void> {
     if (!this.client) return this.transaction(interview.ownerId, repository => repository.saveInterview(interview));
+    // Refuse a stale aggregate: if a question is already stored under another
+    // answer id, this snapshot was computed before a concurrent write and must
+    // not overwrite the header, details or feedback.
+    for (const answer of interview.answers) {
+      const existing = await this.db.query<{ id: string }>(
+        "SELECT id FROM ei_answers WHERE owner_id=$1 AND interview_id=$2 AND question_id=$3",
+        [interview.ownerId, interview.interviewId, answer.questionId],
+      );
+      if (existing.rows[0] && existing.rows[0].id !== answer.answerId) {
+        throw new Error("STALE_INTERVIEW_AGGREGATE");
+      }
+    }
     await this.db.query(
       `INSERT INTO ei_interviews (id,owner_id,target,status,total_questions,answered_count,version,operation_key,ended_at,details)
        VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9,$10::jsonb)
@@ -223,13 +235,25 @@ export class PostgresEvidenceRepository implements EvidenceRepository {
       );
     }
     for (const answer of interview.answers) {
-      await this.db.query(
+      const inserted = await this.db.query(
         `INSERT INTO ei_answers (id,owner_id,interview_id,question_id,text,text_hash,details)
          VALUES ($1,$2,$3,$4,$5,md5($5),$6::jsonb)
-         ON CONFLICT (owner_id,interview_id,question_id) DO NOTHING`,
+         ON CONFLICT (owner_id,interview_id,question_id) DO NOTHING
+         RETURNING id`,
         [answer.answerId, interview.ownerId, interview.interviewId, answer.questionId, answer.text, JSON.stringify(answer)],
       );
-      if (answer.feedback) {
+      // A concurrent writer may already own this question with another answer
+      // row; writing feedback for a row that was not inserted would violate the
+      // answer foreign key, so the feedback is skipped in that case.
+      let ownsAnswer = Boolean(inserted.rowCount);
+      if (!ownsAnswer) {
+        const existing = await this.db.query<{ id: string }>(
+          "SELECT id FROM ei_answers WHERE owner_id=$1 AND interview_id=$2 AND question_id=$3",
+          [interview.ownerId, interview.interviewId, answer.questionId],
+        );
+        ownsAnswer = existing.rows[0]?.id === answer.answerId;
+      }
+      if (ownsAnswer && answer.feedback) {
         await this.db.query(
           `INSERT INTO ei_answer_feedback (id,owner_id,answer_id,status,result,operation_key)
            VALUES (gen_random_uuid(),$1,$2::uuid,$3,$4::jsonb,$2::uuid::text)

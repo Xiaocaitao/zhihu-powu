@@ -54,7 +54,7 @@ export class EvidenceApplication {
     capability: string,
     payload: unknown,
     result: CapabilityResult<T>,
-    persist: (repository: EvidenceRepository, state: EvidenceState) => Promise<void>,
+    persist: (repository: EvidenceRepository, state: EvidenceState) => Promise<CapabilityResult<T> | void>,
   ): Promise<CapabilityResult<T>> {
     const operationKey = ctx.operationKey ?? ctx.requestId;
     const payloadHash = createHash("sha256").update(JSON.stringify(canonical(payload))).digest("hex");
@@ -67,16 +67,40 @@ export class EvidenceApplication {
             summary: "重复请求，返回已提交结果" };
         }
       }
-      await persist(repository, await this.loadState(repository, ctx.ownerId));
+      const override = await persist(repository, await this.loadState(repository, ctx.ownerId));
+      const finalResult = override ?? result;
       if (operationKey) {
-        await repository.saveOperation({ ownerId: ctx.ownerId, capability, operationKey, payloadHash, result });
+        await repository.saveOperation({ ownerId: ctx.ownerId, capability, operationKey, payloadHash, result: finalResult });
       }
-      return result;
+      return finalResult;
     });
   }
 
   private async read<T>(ctx: EvidenceContext, run: (state: EvidenceState) => T | Promise<T>): Promise<T> {
     return run(await this.loadState(this.repository, ctx.ownerId));
+  }
+
+  /**
+   * Interview writes can lose a race with another writer. The repository
+   * refuses a stale snapshot; callers get a retryable conflict instead of a
+   * generic failure so the user can simply refresh and continue.
+   */
+  private async commitInterview<T>(
+    ctx: EvidenceContext, capability: string, payload: unknown, result: CapabilityResult<T>,
+    persist: (repository: EvidenceRepository, state: EvidenceState) => Promise<CapabilityResult<T> | void>,
+  ): Promise<CapabilityResult<T>> {
+    try {
+      return await this.commit(ctx, capability, payload, result, persist);
+    } catch (error) {
+      if (error instanceof Error && error.message === "STALE_INTERVIEW_AGGREGATE") {
+        return {
+          ok: false, changed: false, domain: "evidence", status: "rejected",
+          summary: "会话已被其他操作更新，请刷新后重试",
+          error: { code: "INVALID_STATE", message: "会话已被其他操作更新，请刷新后重试", retryable: true },
+        };
+      }
+      throw error;
+    }
   }
 
   /* ----------------------------- records ---------------------------- */
@@ -228,8 +252,30 @@ export class EvidenceApplication {
       ctx, await this.loadState(this.repository, ctx.ownerId), input.interviewId, input.questionId, input.answer);
     if (!prepared.ok || !prepared.data) return prepared;
     if (!prepared.changed) return prepared;
-    return this.commit(ctx, "submit_interview_answer", input, prepared,
-      (repository) => repository.saveInterview(prepared.data!.interview));
+    const preparedData = prepared.data;
+    return this.commitInterview(ctx, "submit_interview_answer", input, prepared, async (repository, fresh) => {
+      // The aggregate was prepared outside the transaction; re-check the
+      // precondition against the state the transaction actually sees, so two
+      // concurrent answers cannot both be persisted for the same question.
+      const check = this.service.checkAnswer(fresh, input.interviewId, input.questionId, input.answer);
+      if (!check.ok) return check.result;
+      if (check.replay) {
+        return { ...prepared, changed: false, status: "read" as const, summary: "重复提交，返回已有回答",
+          data: { ...preparedData, interview: check.interview, answer: check.replay,
+            feedback: check.replay.feedback, nextQuestion: null, report: check.interview.report } };
+      }
+      const summary = preparedData.interview.report
+        ? { report: preparedData.interview.report, reportStatus: preparedData.interview.reportStatus,
+            recovery: preparedData.interview.recovery }
+        : null;
+      const applied = this.service.applyAnswer(check.interview, input.questionId, input.answer,
+        preparedData.feedback, preparedData.answer.createdAt, summary);
+      await repository.saveInterview(applied.interview);
+      return { ...prepared,
+        data: { ...preparedData, interview: applied.interview, answer: applied.answer,
+          feedback: applied.answer.feedback, nextQuestion: applied.interview.currentQuestion,
+          report: applied.interview.report } };
+    });
   }
 
   async finishInterview(ctx: EvidenceContext, input: { interviewId: string; reason?: string }) {
@@ -237,8 +283,22 @@ export class EvidenceApplication {
       ctx, await this.loadState(this.repository, ctx.ownerId), input.interviewId, input.reason);
     if (!prepared.ok || !prepared.data) return prepared;
     if (!prepared.changed) return prepared;
-    return this.commit(ctx, "finish_interview", input, prepared,
-      (repository) => repository.saveInterview(prepared.data!.interview));
+    const preparedData = prepared.data;
+    return this.commitInterview(ctx, "finish_interview", input, prepared, async (repository, fresh) => {
+      const check = this.service.checkFinish(fresh, input.interviewId);
+      if (!check.ok) return check.result;
+      if (check.interview.status === "completed" || check.interview.status === "ended_early") {
+        return { ...prepared, changed: false, status: "read" as const, summary: "面试此前已结束",
+          data: { interview: check.interview, report: check.interview.report } };
+      }
+      const summary = preparedData.interview.report
+        ? { report: preparedData.interview.report, reportStatus: preparedData.interview.reportStatus,
+            recovery: preparedData.interview.recovery }
+        : null;
+      const applied = this.service.applyFinish(check.interview, input.reason, summary);
+      await repository.saveInterview(applied.interview);
+      return { ...prepared, data: { interview: applied.interview, report: applied.interview.report } };
+    });
   }
 
   async getInterviewFeedback(ctx: EvidenceContext, input: { interviewId: string; questionId?: string }) {
