@@ -20,6 +20,9 @@ type ShimElement = {
   checked: boolean;
   hidden: boolean;
   disabled: boolean;
+  ariaBusy: string;
+  focused: boolean;
+  scrolled: boolean;
   className: string;
   type: string;
   placeholder: string;
@@ -34,6 +37,7 @@ type ShimElement = {
   replaceChildren(...nodes: unknown[]): void;
   reset(): void;
   focus(): void;
+  scrollIntoView(): void;
   remove(): void;
 };
 
@@ -59,7 +63,8 @@ function createDom() {
       addEventListener(type: string, handler: (event: unknown) => unknown) { (created.listeners[type] ??= []).push(handler); },
       append(...nodes: unknown[]) { created.children.push(...nodes); },
       replaceChildren(...nodes: unknown[]) { created.children = [...nodes]; created.textContent = ""; },
-      reset() {}, focus() {}, remove() {},
+      reset() {}, focus() { created.focused = true; }, scrollIntoView() { created.scrolled = true; },
+      remove() { for (const parent of elements.values()) parent.children = parent.children.filter(child => child !== created); },
     } as unknown as ShimElement;
     Object.defineProperty(created, "innerHTML", {
       get: () => textOf(created),
@@ -95,6 +100,9 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
   const origin = `http://127.0.0.1:${address.port}`;
   const cookie = "powu_owner=evidence-index-page";
   const calls: string[] = [];
+  let failHistory = false;
+  let releaseRequest: (() => void) | undefined;
+  let pausePath: string | undefined;
   try {
     const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
     // 静态约束：两个模块不再使用旧的跳会话钩子，其它模块保持原样。
@@ -102,7 +110,7 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     assert.ok(!html.includes('data-record-action="add"'), "学习记录不应再使用旧的跳会话钩子");
     assert.ok(html.includes('data-profile-action="read"'), "其它模块的入口应保持原样");
     assert.ok(html.includes("if(name==='record')void refreshRecords()"), '主导航应调用导出的模块刷新入口');
-    for (const id of ['record-project-source', 'record-project-existing', 'interview-target-project-title', 'interview-target-project-goal']) {
+    for (const id of ['record-project-source', 'record-project-existing', 'interview-target-project-title', 'interview-target-project-goal', 'interview-history-status', 'interview-scope-details', 'interview-scope-notes', 'record-save-status']) {
       assert.ok(html.includes(`id="${id}"`), `${id} 必须存在于真实 HTML，不能只靠测试 DOM 自动虚构`);
     }
 
@@ -123,6 +131,8 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
       crypto: globalThis.crypto,
       fetch: async (path: string, init?: RequestInit) => {
         calls.push(String(path));
+        if (path === pausePath) await new Promise<void>(resolve => { releaseRequest = resolve; });
+        if (failHistory && /^\/api\/evidence\/interviews\/[^/]+$/.test(path)) return new Response(JSON.stringify({ error: { message: '临时读取失败' } }), { status: 503 });
         return fetch(origin + String(path), { ...init, headers: { "content-type": "application/json", cookie, ...(init?.headers ?? {}) } });
       },
       // 页面里已有的全局函数：这里只用于验证 Agent 工具结束后的页面联动。
@@ -150,13 +160,32 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     await element("#record-form").listeners.submit[0]({ preventDefault() {} });
     await waitFor(() => element("#record-list").innerHTML.includes("页内记录：HTTP 练习"));
     assert.match(element("#record-count").textContent, /条/);
+    await waitFor(() => element('#record-save-status').ariaBusy === 'false');
+    element('#review-range').value = '7d';
+    pausePath = '/api/evidence/reviews';
+    await element('#review-form').listeners.submit[0]({ preventDefault() {} });
+    await waitFor(() => !!releaseRequest);
+    assert.equal(element('#review-list').ariaBusy, 'true');
+    assert.equal(element('#review-form button[type="submit"]').disabled, true);
+    assert.match(element('#review-list').innerHTML, /正在整理所选时段/);
+    pausePath = undefined; releaseRequest!(); releaseRequest = undefined;
+    await waitFor(() => element('#review-list').ariaBusy === 'false');
+    assert.match(element('#review-list').innerHTML, /进展/);
+    assert.equal(element('#review-form button[type="submit"]').disabled, false);
 
     // 开始面试：能力下拉来自共享能力目录，题目在页内出现。
     element("#interview-target-kind").value = "skills";
     element("#interview-target-skill").value = KNOWN_SKILL;
     element("#interview-count").value = "1";
+    pausePath = '/api/evidence/interviews';
     await element("#interview-start-form").listeners.submit[0]({ preventDefault() {} });
+    await waitFor(() => !!releaseRequest);
+    assert.equal(element('#interview-feedback').ariaBusy, 'true');
+    assert.equal(element('#interview-start-form button[type="submit"]').disabled, true);
+    assert.match(element('#interview-feedback').innerHTML, /正在根据训练范围生成题目/);
+    pausePath = undefined; releaseRequest!(); releaseRequest = undefined;
     await waitFor(() => element("#interview-question").textContent.length > 0 && element("#interview-question-title").textContent.startsWith("第 1 题"));
+    await waitFor(() => element('#interview-feedback').ariaBusy === 'false');
 
     // 提交回答：逐题反馈与报告都在页内渲染。
     element("#interview-answer").value = "我实现了请求解析并说明了结果。";
@@ -182,6 +211,33 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     await waitFor(() => element("#interview-question-title").textContent.startsWith("第 1 题"));
     const startsAfter = calls.filter(path => path === "/api/evidence/interviews").length;
     assert.equal(startsAfter, startsBefore + 1, "再练一场应创建新的面试会话");
+    await waitFor(() => element('#interview-start-form button[type="submit"]').disabled === false);
+    await panel();
+    const historyRows = element('#interview-history').children as ShimElement[];
+    assert.equal(historyRows.length, 2);
+    const older = historyRows.find(row => textOf(row).includes('已完成'))!;
+    const active = historyRows.find(row => textOf(row).includes('进行中'))!;
+    const open = (row: ShimElement) => (row.children as ShimElement[]).find(child => child.type === 'button')!.listeners.click[0]({});
+    element('#interview-answer').value = '尚未提交的真实回答';
+    pausePath = `/api/evidence/interviews/${older.dataset.interviewId}`;
+    const opening = open(older);
+    await waitFor(() => !!releaseRequest);
+    assert.equal(element('#interview-history-status').ariaBusy, 'true');
+    pausePath = undefined; releaseRequest!(); releaseRequest = undefined;
+    await opening;
+    assert.match(element('#interview-status').textContent, /已完成/);
+    assert.equal(element('#interview-answer').disabled, true);
+    assert.equal(element('#interview-question-title').scrolled, true);
+    assert.equal(element('#interview-question-title').focused, true);
+    assert.equal(element('#interview-history-status').ariaBusy, 'false');
+    await open(active);
+    assert.equal(element('#interview-answer').value, '尚未提交的真实回答');
+    failHistory = true;
+    await open(older);
+    assert.match(element('#interview-history-status').innerHTML, /临时读取失败/);
+    assert.equal(element('#interview-start-form button[type="submit"]').disabled, false);
+    assert.match(element('#interview-status').textContent, /进行中/);
+    failHistory = false;
 
     // 聊天的 SSE 里 Agent 调用本模块工具成功后，页面自动切到对应模块。
     await (sandbox.parseSse as (response: unknown, handlers: object) => Promise<void>)({}, {});

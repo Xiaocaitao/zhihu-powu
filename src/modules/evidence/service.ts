@@ -845,7 +845,7 @@ export class EvidenceService {
     // 的 schema 已保证至少有一个 skillId。
     if (target.kind === "project" && !project) return { ok: false, code: "INVALID_ARGUMENT", message: "请提供项目资料" };
     if (target.kind === "skills" && !skillIds.length) return { ok: false, code: "INVALID_ARGUMENT", message: "请指定训练能力" };
-    if (!skillIds.length) coverage.missing.push({ source: "skills", reason: "尚无结构化能力标识，本场按岗位要求或项目说明训练，不生成能力等级结论" });
+    if (!skillIds.length) coverage.missing.push({ source: "skills", reason: "本场按岗位要求或项目说明练习并提供回答建议，暂不形成能力等级评估。" });
     if (project && !project.contribution) coverage.missing.push({ source: "project", reason: "本人贡献尚未明确，项目背景不作为已验证的个人成果" });
     const skills = await this.resolveSkills(skillIds);
     if (skills.missingIds.length) {

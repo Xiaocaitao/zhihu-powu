@@ -22,6 +22,24 @@
     /* Preserve conditional fields and busy states within the two owned pages. */
     [data-page="record"] [hidden], [data-page="interview"] [hidden]{display:none!important}
     [data-page="record"] button:disabled, [data-page="interview"] button:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+    /* Feedback and motion are scoped to Evidence & Interview. */
+    :is([data-page="record"],[data-page="interview"]) .growth-card{transition:box-shadow .2s,border-color .2s}
+    :is([data-page="record"],[data-page="interview"]) :is(button,input,select,textarea,summary):focus-visible{outline:3px solid #1769e84d;outline-offset:3px}
+    :is([data-page="record"],[data-page="interview"]) .growth-row{flex-wrap:wrap;line-height:1.65}
+    :is([data-page="record"],[data-page="interview"]) .growth-action{padding:7px 10px;border-radius:8px;transition:background .2s}
+    :is([data-page="record"],[data-page="interview"]) .growth-action:hover:not(:disabled){background:#edf5ff}
+    :is([data-page="record"],[data-page="interview"]) .growth-loading{display:flex;align-items:center;gap:12px;margin:12px 0;padding:14px 16px;border:1px solid #dce7f4;border-radius:12px;background:linear-gradient(110deg,#f7faff,#edf5ff,#f7faff);background-size:200% 100%;color:var(--blue);font-size:13px;line-height:1.6;animation:evidence-shimmer 2s ease-in-out infinite}
+    :is([data-page="record"],[data-page="interview"]) .growth-loading::before{content:"";width:17px;height:17px;flex-shrink:0;border:2px solid #1769e829;border-top-color:var(--blue);border-radius:50%;animation:evidence-spin .8s linear infinite}
+    #interview-question{font-size:17px;color:var(--ink);line-height:1.9;white-space:pre-wrap}
+    #interview-question-title{scroll-margin-top:24px}
+    #interview-scope-summary{padding:10px 14px;border-radius:10px;background:#f7f9fc}
+    #interview-scope-details{margin:10px 0 18px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:12px;line-height:1.8;color:var(--muted)}
+    #interview-scope-details summary{cursor:pointer;color:var(--ink)}
+    #interview-history [aria-current="true"]{border-color:#aacaf8;background:#f5f9ff}
+    #interview-history-status{position:sticky;bottom:12px;z-index:1}
+    @keyframes evidence-spin{to{transform:rotate(360deg)}}
+    @keyframes evidence-shimmer{50%{background-position:100% 0}}
+    @media(prefers-reduced-motion:reduce){:is([data-page="record"],[data-page="interview"]) *{animation:none!important;transition:none!important}}
   </style>
 </head>
 <body>
@@ -97,10 +115,10 @@
         <section class="page" data-page="interview" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">AI MOCK INTERVIEW</p><h1>模拟面试</h1><p class="page-intro">在本页完成训练：选择范围、逐题作答、查看反馈与整场报告，不需要离开页面。</p></div><span class="growth-badge" id="interview-status">正在读取</span></header><div class="growth-grid"><article class="growth-card wide"><h2>训练范围</h2><form id="interview-start-form" class="growth-form"><label>训练类型<select id="interview-target-kind"><option value="job">目标岗位</option><option value="skills">专项能力</option><option value="project">我的项目</option></select></label><label id="interview-job-field">目标岗位<select id="interview-target-job"></select></label><label id="interview-skill-field" hidden>专项能力<select id="interview-target-skill"></select></label><label id="interview-project-field" hidden>项目<select id="interview-target-project"></select></label>
           <label id="interview-target-project-title-field" hidden>项目名称<input id="interview-target-project-title" maxlength="200"></label>
           <label id="interview-target-project-goal-field" hidden>项目目标<textarea id="interview-target-project-goal" maxlength="2000"></textarea></label>
-          <label id="interview-target-project-contribution-field" hidden>本人贡献（可选）<textarea id="interview-target-project-contribution" maxlength="2000"></textarea></label><label>题量<input id="interview-count" type="number" min="1" max="20" value="5"></label><label class="full">重点（可选）<input id="interview-focus" placeholder="例如：项目细节、技术选型理由"></label><div class="growth-actions full"><button class="primary" type="submit">开始文字训练</button><button class="growth-action" type="button" data-interview-resume>继续未完成的面试</button></div></form><p class="growth-muted" id="interview-scope-hint">岗位来自职业规划的岗位列表，能力来自共享能力目录；没有依据时请先补充，不会替你假设目标。</p></article><article class="growth-card wide"><h2 id="interview-question-title">尚未开始面试</h2><p id="interview-question">选择训练范围后开始；不会把未提交的输入当作回答。</p><p class="growth-muted" id="interview-scope-summary"></p><form id="interview-answer-form" class="growth-form"><label class="full">回答<textarea id="interview-answer" required></textarea></label><div class="growth-actions full"><button class="primary" type="submit">提交回答</button><button class="growth-action" type="button" data-interview-finish>提前结束</button><button class="growth-action" type="button" data-interview-again>按同样范围再练一场</button></div></form><div id="interview-feedback" class="growth-list"></div></article><article class="growth-card"><h2>整场报告</h2><div id="interview-report" class="growth-list"><p class="growth-muted">结束一场面试后在这里显示报告与局限。</p></div></article><article class="growth-card"><h2>本次进度</h2><div id="interview-progress" class="growth-list"><p class="growth-muted">开始后可看到逐题进度。</p></div></article><article class="growth-card wide"><h2>历史面试</h2><div id="interview-history" class="growth-list"><p class="growth-muted">正在读取历史记录。</p></div></article></div></div></section>
+          <label id="interview-target-project-contribution-field" hidden>本人贡献（可选）<textarea id="interview-target-project-contribution" maxlength="2000"></textarea></label><label>题量<input id="interview-count" type="number" min="1" max="20" value="5"></label><label class="full">重点（可选）<input id="interview-focus" placeholder="例如：项目细节、技术选型理由"></label><div class="growth-actions full"><button class="primary" type="submit">开始文字训练</button><button class="growth-action" type="button" data-interview-resume>继续未完成的面试</button></div></form><p class="growth-muted" id="interview-scope-hint">岗位来自职业规划的岗位列表，能力来自共享能力目录；没有依据时请先补充，不会替你假设目标。</p></article><article class="growth-card wide"><h2 id="interview-question-title" tabindex="-1">尚未开始面试</h2><p id="interview-question">选择训练范围后开始；不会把未提交的输入当作回答。</p><p class="growth-muted" id="interview-scope-summary"></p><details id="interview-scope-details" hidden><summary>本场评估范围与限制</summary><div id="interview-scope-notes"></div></details><form id="interview-answer-form" class="growth-form"><label class="full">回答<textarea id="interview-answer" required></textarea></label><div class="growth-actions full"><button class="primary" type="submit">提交回答</button><button class="growth-action" type="button" data-interview-finish>提前结束</button><button class="growth-action" type="button" data-interview-again>按同样范围再练一场</button></div></form><div id="interview-feedback" class="growth-list"></div></article><article class="growth-card"><h2>整场报告</h2><div id="interview-report" class="growth-list"><p class="growth-muted">结束一场面试后在这里显示报告与局限。</p></div></article><article class="growth-card"><h2>本次进度</h2><div id="interview-progress" class="growth-list"><p class="growth-muted">开始后可看到逐题进度。</p></div></article><article class="growth-card wide"><h2>历史面试</h2><div id="interview-history-status" aria-live="polite"></div><div id="interview-history" class="growth-list"><p class="growth-muted">正在读取历史记录。</p></div></article></div></div></section>
         <section class="page" data-page="learning" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">LEARNING PLAN</p><h1>学习计划</h1><p class="page-intro">成员 C Learning Plan：计划、阶段和任务由 Agent 生成并由 Learning 服务返回。</p></div><span class="growth-badge" id="learning-status">正在读取</span><span class="growth-muted" id="learning-drafts"></span></header><div class="growth-grid"><article class="growth-card wide"><h2>阶段路线</h2><div id="learning-stages" class="growth-list"><p class="growth-muted">正在读取计划数据。</p></div></article><article class="growth-card"><h2>今日任务</h2><div id="learning-tasks" class="growth-list"><p class="growth-muted">正在读取任务。</p></div><button class="growth-action" type="button" data-learning-action="refresh">让 Agent 读取当前计划</button></article><article class="growth-card"><h2>计划反馈</h2><div id="learning-feedback" class="growth-list"><p class="growth-muted">正在读取反馈。</p></div><button class="growth-action" type="button" data-learning-action="feedback">向 Agent 记录反馈</button></article></div></div></section>
         <section class="page" data-page="record" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">LEARNING RECORD</p><h1>学习记录</h1><p class="page-intro">时间线只展示已保存事实、成果与评估状态；记录、修正、评估与复盘都在本页完成。</p></div><span class="growth-badge" id="record-count">正在读取</span></header><div class="growth-grid"><article class="growth-card wide"><h2>记录一次学习</h2><form id="record-form" class="growth-form"><label>类型<select id="record-kind"><option value="activity">学习活动</option><option value="project_outcome">项目成果</option></select></label><label>发生时间<input id="record-occurred" type="datetime-local"></label><label>实际用时（分钟，可留空）<input id="record-duration" type="number" min="0"></label><label>关联能力<select id="record-skill"></select></label><label class="full">标题<input id="record-title" required></label><label class="full">内容<textarea id="record-content" required placeholder="完成了什么、卡在哪里、结果如何"></textarea></label><label>关联项目<select id="record-project-source"><option value="none">不关联项目</option><option value="existing">选择已有项目</option><option value="manual">手动填写项目</option></select></label>
-          <label id="record-project-existing-field" hidden>已有项目<select id="record-project-existing"></select></label><label id="record-project-title-field" hidden>项目名称<input id="record-project-title"></label><label id="record-project-goal-field" hidden>项目目标<input id="record-project-goal"></label><label class="full" id="record-project-contribution-field" hidden>本人贡献<textarea id="record-project-contribution" placeholder="说明本人做了什么；不确定就勾选下面的待补充"></textarea></label><label class="full" id="record-project-pending-field" hidden>本人贡献待补充<input id="record-project-pending" type="checkbox"></label><label>关联材料<select id="record-materials"></select></label><div class="growth-actions full"><button class="primary" type="submit">保存记录</button></div></form><p class="growth-muted" id="record-form-hint">只保存真实发生过的学习事实；实际用时未知就留空，不会用预计用时替代。</p></article><article class="growth-card wide"><h2>学习时间线</h2><form id="record-filter-form" class="growth-form"><label>时间范围<select id="record-range"><option value="week">本周</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option></select></label><label>类型<select id="record-kind-filter"><option value="">全部类型</option><option value="activity">学习活动</option><option value="project_outcome">项目成果</option><option value="task_change">任务变化</option><option value="learning_feedback">学习反馈</option><option value="plan_adjustment">计划调整</option></select></label><label>能力<select id="record-skill-filter"><option value="">全部能力</option></select></label><div class="growth-actions full"><button class="primary" type="submit">应用筛选</button></div></form><div id="record-list" class="growth-timeline" aria-live="polite"><p class="growth-muted">正在读取学习记录。</p></div><p class="growth-muted" id="record-coverage"></p></article><article class="growth-card"><h2>单条记录</h2><div id="record-detail" class="growth-list"><p class="growth-muted">点击时间线中的记录查看详情、修正、撤回或评估。</p></div></article><article class="growth-card"><h2>能力证据</h2><div id="record-skills" class="growth-list"><p class="growth-muted">评估后会在这里显示依据与有效性。</p></div><button class="growth-action" type="button" data-record-skills>刷新能力证据</button></article><article class="growth-card"><h2>阶段复盘</h2><form id="review-form" class="growth-form"><label>复盘范围<select id="review-range"><option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="week">本周</option></select></label><div class="growth-actions full"><button class="primary" type="submit">生成复盘</button></div></form><div id="review-list" class="growth-list"><p class="growth-muted">还没有复盘。</p></div></article></div></div></section>
+          <label id="record-project-existing-field" hidden>已有项目<select id="record-project-existing"></select></label><label id="record-project-title-field" hidden>项目名称<input id="record-project-title"></label><label id="record-project-goal-field" hidden>项目目标<input id="record-project-goal"></label><label class="full" id="record-project-contribution-field" hidden>本人贡献<textarea id="record-project-contribution" placeholder="说明本人做了什么；不确定就勾选下面的待补充"></textarea></label><label class="full" id="record-project-pending-field" hidden>本人贡献待补充<input id="record-project-pending" type="checkbox"></label><label>关联材料<select id="record-materials"></select></label><div class="growth-actions full"><button class="primary" type="submit">保存记录</button></div></form><div id="record-save-status" aria-live="polite"></div><p class="growth-muted" id="record-form-hint">只保存真实发生过的学习事实；实际用时未知就留空，不会用预计用时替代。</p></article><article class="growth-card wide"><h2>学习时间线</h2><form id="record-filter-form" class="growth-form"><label>时间范围<select id="record-range"><option value="week">本周</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option></select></label><label>类型<select id="record-kind-filter"><option value="">全部类型</option><option value="activity">学习活动</option><option value="project_outcome">项目成果</option><option value="task_change">任务变化</option><option value="learning_feedback">学习反馈</option><option value="plan_adjustment">计划调整</option></select></label><label>能力<select id="record-skill-filter"><option value="">全部能力</option></select></label><div class="growth-actions full"><button class="primary" type="submit">应用筛选</button></div></form><div id="record-list" class="growth-timeline" aria-live="polite"><p class="growth-muted">正在读取学习记录。</p></div><p class="growth-muted" id="record-coverage"></p></article><article class="growth-card"><h2>单条记录</h2><div id="record-detail" class="growth-list"><p class="growth-muted">点击时间线中的记录查看详情、修正、撤回或评估。</p></div></article><article class="growth-card"><h2>能力证据</h2><div id="record-skills" class="growth-list"><p class="growth-muted">评估后会在这里显示依据与有效性。</p></div><button class="growth-action" type="button" data-record-skills>刷新能力证据</button></article><article class="growth-card"><h2>阶段复盘</h2><form id="review-form" class="growth-form"><label>复盘范围<select id="review-range"><option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="week">本周</option></select></label><div class="growth-actions full"><button class="primary" type="submit">生成复盘</button></div></form><div id="review-list" class="growth-list"><p class="growth-muted">还没有复盘。</p></div></article></div></div></section>
         <section class="page" data-page="knowledge" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">MY KNOWLEDGE BASE</p><h1>知识库</h1><p class="page-intro">上传资料后，提问时可以直接附带使用。</p></div><label class="primary">上传资料<input id="knowledge-files" type="file" multiple hidden></label></header><div class="empty-stage knowledge-card"><div id="knowledge-list" class="knowledge-list"></div></div></div></section>
       </div>
     </main>
@@ -213,6 +231,19 @@
         if (items.some(item => item.value === selected)) select.value = selected;
       };
       const pendingWrites = new Map();
+      function reveal(...elements) {
+        if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+        for (const element of elements) element?.animate?.([
+          { opacity: .35, transform: 'translateY(6px)' }, { opacity: 1, transform: 'translateY(0)' }
+        ], { duration: 260, easing: 'ease-out' });
+      }
+      // Keep existing content while a request is pending; no simulated progress or generated text.
+      function loading(host, message) {
+        const indicator = document.createElement('div');
+        indicator.className = 'growth-loading'; indicator.role = 'status'; indicator.ariaLive = 'polite';
+        indicator.textContent = message; host.append(indicator); host.ariaBusy = 'true';
+        return () => { indicator.remove(); host.ariaBusy = 'false'; reveal(host); };
+      }
       async function json(path, options = {}) {
         const write = options.method && options.method !== 'GET';
         const signature = JSON.stringify([path, options.method, options.body, options.headers]);
@@ -235,7 +266,7 @@
       }
 
       /* ------------------------------- 模拟面试 ------------------------------- */
-      const interview = { session: null, target: null, count: null, focus: '', busy: false };
+      const interview = { session: null, target: null, count: null, focus: '', busy: false, revision: 0, drafts: new Map() };
       function syncInterviewProjectFields() {
         const kind = document.querySelector('#interview-target-kind').value;
         const manual = kind === 'project' && document.querySelector('#interview-target-project').value === '__manual__';
@@ -287,6 +318,8 @@
         const focus = options.reuse ? interview.focus : document.querySelector('#interview-focus').value.trim();
         hint.textContent = '正在生成题目，请稍候…';
         interview.busy = true;
+        interview.revision++;
+        const done = loading(document.querySelector('#interview-feedback'), '正在根据训练范围生成题目，请稍候…');
         syncInterviewActions();
         try {
           const data = await json('/api/evidence/interviews', {
@@ -299,7 +332,7 @@
           renderSession(data.interview);
           await interviewPanel();
         } catch (error) { hint.textContent = error.message; }
-        finally { interview.busy = false; syncInterviewActions(); }
+        finally { done(); interview.busy = false; syncInterviewActions(); }
       }
       function syncInterviewActions() {
         const session = interview.session;
@@ -314,6 +347,8 @@
         again.disabled = interview.busy || !session || active || session.status === 'preparing';
         again.textContent = session?.status === 'preparation_failed' ? '重新生成题目' : '按同样范围再练一场';
         document.querySelector('#interview-start-form button[type="submit"]').disabled = interview.busy;
+        document.querySelector('[data-interview-resume]').disabled = interview.busy;
+        document.querySelectorAll('#interview-history button').forEach(button => { button.disabled = interview.busy; });
       }
       function renderSession(session) {
         const title = document.querySelector('#interview-question-title');
@@ -326,9 +361,16 @@
         if (!title) return;
         const previousId = interview.session?.interviewId;
         interview.session = session;
-        if (previousId !== session?.interviewId) document.querySelector('#interview-answer').value = '';
+        if (previousId !== session?.interviewId) {
+          if (previousId) interview.drafts.set(previousId, document.querySelector('#interview-answer').value);
+          document.querySelector('#interview-answer').value = interview.drafts.get(session?.interviewId) || '';
+        }
         syncInterviewActions();
         progress.replaceChildren(); feedback.replaceChildren(); report.replaceChildren();
+        const scopeDetails = document.querySelector('#interview-scope-details');
+        const scopeNotes = document.querySelector('#interview-scope-notes');
+        scopeDetails.hidden = !session?.coverage?.missing?.length;
+        scopeNotes.replaceChildren(...(session?.coverage?.missing || []).map(item => rowText(item.reason)));
         if (!session) {
           title.textContent = '尚未开始面试';
           question.textContent = '选择训练范围后开始；不会把未提交的输入当作回答。';
@@ -343,7 +385,6 @@
         status.textContent = statusText[session.status] || session.status;
         const target = session.target || {};
         scope.textContent = session.targetSnapshot?.title ? `本场范围：${session.targetSnapshot.title}` : target.kind === 'job' ? `本场范围：岗位 ${target.jobId}` : target.kind === 'skills' ? `本场范围：能力 ${(target.skillIds || []).join('、')}` : `本场范围：项目 ${target.projectId || target.project?.title || '手填项目'}`;
-        if (session.coverage?.missing?.length) scope.textContent += ` · ${session.coverage.missing.map(item => item.reason).join('；')}`;
         if (session.status === 'preparation_failed') {
           title.textContent = '题目生成失败';
           question.textContent = (session.coverage?.missing || []).map(item => item.reason).join('；') || '生成服务暂时不可用。';
@@ -398,6 +439,28 @@
         } else {
           report.append(rowText(`报告状态：${statusText[session.reportStatus] || session.reportStatus}`));
         }
+        reveal(question, feedback, report);
+      }
+      async function openInterview(interviewId) {
+        if (interview.busy) return;
+        interview.busy = true;
+        interview.revision++;
+        syncInterviewActions();
+        const status = document.querySelector('#interview-history-status');
+        status.replaceChildren();
+        const done = loading(status, '正在读取这场面试…');
+        try {
+          const data = await json(`/api/evidence/interviews/${encodeURIComponent(interviewId)}`);
+          renderSession(data.interview);
+          document.querySelectorAll('#interview-history [data-interview-id]').forEach(row => {
+            row.ariaCurrent = String(row.dataset.interviewId === interviewId);
+          });
+          status.append(rowText('已打开所选场次，题目、回答和报告显示在上方。'));
+          const title = document.querySelector('#interview-question-title');
+          title.focus({ preventScroll: true });
+          title.scrollIntoView?.({ behavior: globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+        } catch (error) { status.append(rowText(`读取失败：${error.message}。请重新点击本场重试。`)); }
+        finally { done(); interview.busy = false; syncInterviewActions(); }
       }
       function renderInterviewHistory(items) {
         const history = document.querySelector('#interview-history');
@@ -406,34 +469,38 @@
         if (!items.length) { history.append(rowText('暂无历史面试')); return; }
         for (const item of items) {
           const row = document.createElement('div'); row.className = 'growth-row';
+          row.dataset.interviewId = item.interviewId;
+          row.ariaCurrent = String(item.interviewId === interview.session?.interviewId);
           const strong = document.createElement('strong');
           strong.textContent = `${statusText[item.status] || item.status} · ${item.answeredCount}/${item.totalQuestions ?? '—'} 题`;
           const span = document.createElement('span'); span.className = 'growth-muted';
           span.textContent = `${fmt(item.createdAt)} · 报告：${statusText[item.reportStatus] || item.reportStatus}`;
           const open = document.createElement('button'); open.type = 'button'; open.className = 'growth-action'; open.textContent = '查看 / 继续本场';
-          open.addEventListener('click', async () => {
-            if (interview.busy) return;
-            try { const data = await json(`/api/evidence/interviews/${encodeURIComponent(item.interviewId)}`); renderSession(data.interview); }
-            catch (error) { document.querySelector('#interview-scope-hint').textContent = error.message; }
-          });
+          open.disabled = interview.busy;
+          open.addEventListener('click', () => openInterview(item.interviewId));
           row.append(strong, span, open); history.append(row);
         }
       }
       async function interviewPanel() {
+        const revision = ++interview.revision;
         await prepareInterviewTargets();
         try {
           const data = await json('/api/evidence/interviews?limit=20');
+          if (revision !== interview.revision) return;
           // 只有拿到进行中的会话时才切换面板；刚结束的会话与报告保留在页面上。
           if (interview.session) {
             const fresh = await json(`/api/evidence/interviews/${encodeURIComponent(interview.session.interviewId)}`);
+            if (revision !== interview.revision) return;
             renderSession(fresh.interview);
           } else if (data.session) renderSession(data.session);
           else if (data.page?.items?.[0]) {
             const latest = await json(`/api/evidence/interviews/${encodeURIComponent(data.page.items[0].interviewId)}`);
+            if (revision !== interview.revision) return;
             renderSession(latest.interview);
           } else renderSession(null);
           renderInterviewHistory(data.page?.items || []);
         } catch (error) {
+          if (revision !== interview.revision) return;
           const history = document.querySelector('#interview-history');
           if (history) history.replaceChildren(rowText(`读取失败：${error.message}`));
         }
@@ -446,6 +513,8 @@
         if (!session || session.status !== 'active' || !session.currentQuestion) { hint.textContent = '当前没有可作答的题目。'; return; }
         if (!answer) { hint.textContent = '请先输入回答。'; return; }
         interview.busy = true; syncInterviewActions(); hint.textContent = '正在保存回答并生成反馈…';
+        interview.revision++;
+        const done = loading(document.querySelector('#interview-feedback'), '正在保存回答并生成反馈，请稍候…');
         try {
           const data = await json(`/api/evidence/interviews/${encodeURIComponent(session.interviewId)}/answers`, {
             method: 'POST',
@@ -456,20 +525,22 @@
           renderSession(data.interview);
           await interviewPanel();
         } catch (error) { hint.textContent = error.message; }
-        finally { interview.busy = false; syncInterviewActions(); }
+        finally { done(); interview.busy = false; syncInterviewActions(); }
       }
       async function finishInterview() {
         const hint = document.querySelector('#interview-scope-hint');
         const session = interview.session;
         if (!session || interview.busy) return;
         interview.busy = true; syncInterviewActions();
+        interview.revision++;
+        const done = loading(document.querySelector('#interview-report'), '正在整理本场回答并生成报告，请稍候…');
         try {
           const data = await json(`/api/evidence/interviews/${encodeURIComponent(session.interviewId)}/finish`, { method: 'POST', body: '{}' });
           hint.textContent = data.recovery ? data.recovery.action : data.report ? '面试已结束，报告已生成。' : '面试已结束；本场没有可用回答，未生成报告。';
           renderSession(data.interview);
           await interviewPanel();
         } catch (error) { hint.textContent = error.message; }
-        finally { interview.busy = false; syncInterviewActions(); }
+        finally { done(); interview.busy = false; syncInterviewActions(); }
       }
 
       /* ------------------------------- 学习记录 ------------------------------- */
@@ -606,8 +677,11 @@
             } catch (error) { meta.textContent = error.message; }
           });
           assessButton.addEventListener('click', async () => {
+            if (assessButton.disabled) return;
             const skillIds = (item.skillRefs || []).map(skill => skill.skillId);
             if (!skillIds.length) { meta.textContent = '这条记录没有关联能力标识，无法评估。'; return; }
+            assessButton.disabled = true; saveButton.disabled = true; withdrawButton.disabled = true;
+            const done = loading(result, '正在结合学习记录与所选标准生成评估…');
             try {
               const assessed = await json('/api/evidence/assessments', {
                 method: 'POST', body: JSON.stringify({ evidenceIds: [recordId], skillIds, ...(criteriaSelect.value ? { criteria: { kind: 'job', jobId: criteriaSelect.value } } : {}) })
@@ -624,6 +698,7 @@
               result.append(rowText(`评价标准：${assessed.assessment.criteriaSummary}`));
               await refreshSkillCards();
             } catch (error) { meta.textContent = error.message; }
+            finally { done(); assessButton.disabled = false; saveButton.disabled = false; withdrawButton.disabled = false; }
           });
         } catch (error) { detail.replaceChildren(rowText(`读取失败：${error.message}`)); }
       }
@@ -658,6 +733,10 @@
       }
       async function generateReview() {
         const el = document.querySelector('#review-list');
+        const submit = document.querySelector('#review-form button[type="submit"]');
+        if (submit.disabled) return;
+        submit.disabled = true;
+        const done = loading(el, '正在整理所选时段的学习记录并生成复盘…');
         const value = document.querySelector('#review-range').value;
         try {
           let query = rangeQuery(value);
@@ -668,6 +747,7 @@
           const data = await json('/api/evidence/reviews', { method: 'POST', body: JSON.stringify({ from: query.from, to: query.to }) });
           renderReview(data.review);
         } catch (error) { if (el) el.replaceChildren(rowText(error.message)); }
+        finally { done(); submit.disabled = false; }
       }
       async function loadLatestReview() {
         try {
@@ -718,6 +798,7 @@
         if (!body.title || !body.content) { hint.textContent = '标题和内容不能为空。'; return; }
         record.busy = true;
         const submit = document.querySelector('#record-form button[type="submit"]'); submit.disabled = true;
+        const done = loading(document.querySelector('#record-save-status'), '正在保存学习记录…');
         try {
           await json('/api/evidence/records', { method: 'POST', body: JSON.stringify(body) });
           hint.textContent = '记录已保存。';
@@ -725,7 +806,7 @@
           record.pendingOccurred = null;
           await refreshRecordPage();
         } catch (error) { hint.textContent = error.message; }
-        finally { record.busy = false; submit.disabled = false; }
+        finally { done(); record.busy = false; submit.disabled = false; }
       }
       function syncProjectFields() {
         const source = document.querySelector('#record-project-source').value;

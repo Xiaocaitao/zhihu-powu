@@ -28,6 +28,19 @@ const learning = new MemoryLearningRepository();
 const profile = new MemoryProfileRepository();
 const skills = new SharedSkills(new MemorySkillRepository(initialSkillDefinitions));
 const generation = new MockEvidenceGeneration();
+// Optional local latency makes loading states observable without calling a live model.
+const generationDelay = Number(process.env.PREVIEW_GENERATION_DELAY_MS ?? 0);
+if (Number.isFinite(generationDelay) && generationDelay > 0 && generationDelay <= 10000) {
+  const delayed = <T, R>(method: (input: T) => Promise<R>) => async (input: T): Promise<R> => {
+    await new Promise(resolve => setTimeout(resolve, generationDelay));
+    return method(input);
+  };
+  generation.buildInterview = delayed(generation.buildInterview.bind(generation));
+  generation.assessAnswer = delayed(generation.assessAnswer.bind(generation));
+  generation.summarizeInterview = delayed(generation.summarizeInterview.bind(generation));
+  generation.assessEvidence = delayed(generation.assessEvidence.bind(generation));
+  generation.reviewLearning = delayed(generation.reviewLearning.bind(generation));
+}
 if (process.env.PREVIEW_FAIL_FIRST_INTERVIEW === '1') {
   const build = generation.buildInterview.bind(generation);
   let first = true;
