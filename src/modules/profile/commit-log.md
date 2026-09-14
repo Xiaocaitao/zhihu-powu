@@ -106,3 +106,10 @@
 - Memory 与 PostgreSQL Repository 均提供回执读写；新增增量迁移补齐命令名和请求 ID 字段。
 - Profile 独立类型检查通过，18 项单元测试全部通过。
 - PostgreSQL 并发唯一约束、事务回滚和真实数据库集成测试已记录在 `docs/Profile-持久化集成测试清单.md`，待数据库环境执行。
+
+## 2026-09-14 · 事务写入端口基座
+
+- 增加 `withWriteTransaction` 事务端口，Memory Repository 支持失败快照回滚。
+- PostgreSQL Repository 增加 BEGIN/COMMIT/ROLLBACK 边界，为后续客户端事务化写入提供统一入口。
+- 增加事务失败回滚测试；Profile 独立类型检查通过，19 项单元测试全部通过。
+- 真实 PostgreSQL 四表原子写入、并发、回滚和 DTO 集成测试仍待数据库环境执行，详见集成测试清单。

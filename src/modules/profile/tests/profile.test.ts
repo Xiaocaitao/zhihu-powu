@@ -22,6 +22,7 @@ test('相同事实重复提交不递增版本',async()=>{const {service}=setup()
 test('相同目标重复提交不递增版本',async()=>{const {service}=setup();const first=await service.updateUserGoal(cmd({direction:'前端'}));const second=await service.updateUserGoal({...cmd({direction:'前端'}),expectedVersion:1});assert.equal(first.version,1);assert.equal(second.changed,false);assert.equal(second.version,1)});
 test('相同幂等命令回放原结果',async()=>{const {service}=setup();const first=await service.saveProfileFact({...cmd({factType:'major',value:{text:'CS'},source:'user_input'}),idempotencyKey:'same'});const second=await service.saveProfileFact({...cmd({factType:'major',value:{text:'CS'},source:'user_input'}),idempotencyKey:'same'});assert.equal(second.entityId,first.entityId);assert.equal(second.version,first.version)});
 test('同幂等键不同载荷返回重复请求',async()=>{const {service}=setup();await service.saveProfileFact({...cmd({factType:'major',value:{text:'CS'},source:'user_input'}),idempotencyKey:'same'});const result=await service.saveProfileFact({...cmd({factType:'major',value:{text:'Java'},source:'user_input'}),idempotencyKey:'same'});assert.equal(result.ok,false);assert.equal(result.error?.code,'DUPLICATE_REQUEST')});
+test('事务失败回滚内存画像与回执',async()=>{const {repo,service}=setup();await assert.rejects(()=>repo.withWriteTransaction!(async tx=>{await service.saveProfileFact({...cmd({factType:'major',value:{text:'CS'},source:'user_input'}),idempotencyKey:'tx'});throw new Error('ROLLBACK');}));assert.equal(await service.getUserProfile(ctx(),{}),null);assert.equal(await repo.getCommandReceipt?.('u1','tx'),undefined)});
 
 
 

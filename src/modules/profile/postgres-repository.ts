@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { ProfileFactDTO, ProfileFactPayload, ProfileFactSource, ProfileSection, ProfileFactType, UserGoalDTO } from "./contracts.ts";
-import type { ProfileRepository } from "./repository.ts";
+import type { ProfileRepository, ProfileWriteTransaction } from "./repository.ts";
 
 type FactRow = Omit<ProfileFactDTO, "value" | "evidenceRef"> & { value: ProfileFactPayload["value"]; evidence_ref?: { evidenceId: string; evaluatedAt: string } | null };
 type GoalRow = { id: string; ownerId: string; goalType: "target_direction"; value: { direction: string | null }; version: number; updatedAt: string };
@@ -10,6 +10,7 @@ type GoalRow = { id: string; ownerId: string; goalType: "target_direction"; valu
 export class PostgresProfileRepository implements ProfileRepository {
   private readonly pool: Pool;
   constructor(pool: Pool) { this.pool = pool; }
+  async withWriteTransaction<T>(fn: ProfileWriteTransaction<T>): Promise<T> { const client = await this.pool.connect(); try { await client.query('BEGIN'); const result = await fn(this); await client.query('COMMIT'); return result; } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } }
   async getFacts(ownerId: string, sections?: ProfileSection[]) { const values: unknown[] = [ownerId]; const where = ["owner_id=$1"]; if (sections?.length) { values.push(sections); where.push(`section = ANY($${values.length})`); } const result = await this.pool.query<FactRow>(`SELECT id,fact_type AS "factType",section,value,source,is_confirmed AS "isConfirmed",evidence_ref,version,updated_at::text AS "updatedAt" FROM profile_facts WHERE ${where.join(" AND ")} ORDER BY fact_type`, values); return result.rows.map(row => ({ ...row, evidenceRef: row.evidence_ref ?? undefined })) as ProfileFactDTO[]; }
   async getGoals(ownerId: string) { const result = await this.pool.query<GoalRow>(`SELECT id,owner_id AS "ownerId",goal_type AS "goalType",value,version,updated_at::text AS "updatedAt" FROM profile_goals WHERE owner_id=$1 ORDER BY updated_at DESC`, [ownerId]); return result.rows as UserGoalDTO[]; }
   async saveFact(ownerId: string, fact: Omit<ProfileFactDTO, "id" | "version" | "updatedAt">, expectedVersion?: number) {
