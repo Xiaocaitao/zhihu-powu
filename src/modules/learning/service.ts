@@ -1,123 +1,20 @@
-import { createHash, randomUUID } from "node:crypto";
-import type { CapabilityResult, DomainCommand, ModuleContext } from "../../contracts/capability.ts";
-import { adjustLearningPlanSchema, confirmLearningPlanSchema, createLearningPlanSchema, getActivePlanSchema, getLearningProgressSchema, getTodayTasksSchema, recordLearningFeedbackSchema, updateTaskStatusSchema, type AdjustLearningPlanCommand, type CreateLearningPlanCommand, type ConfirmLearningPlanCommand, type LearningApplication, type LearningCapabilityResult, type RecordLearningFeedbackCommand, type UpdateTaskStatusCommand, LearningError } from "./contracts.ts";
-import { clone, type LearningRepository, planProgress, type NewPlan, stageProgress } from "./repository.ts";
-
-function hashCommand(command: DomainCommand<unknown>): string {
-  return createHash("sha256").update(JSON.stringify({ payload: command.payload, expectedVersion: command.expectedVersion })).digest("hex");
-}
-
-function result<T>(data: T, summary: string, entityId?: string, version?: number, status: CapabilityResult["status"] = "applied"): LearningCapabilityResult<T> {
-  return { ok: true, changed: status !== "read", domain: "learning", entityId, version, status, summary, data };
-}
-
-function rejected(error: unknown): never {
-  if (error instanceof LearningError) throw error;
-  throw new LearningError("INVALID_ARGUMENT", error instanceof Error ? error.message : "学习计划请求无效");
-}
-
+import type { CapabilityErrorCode, DomainCommand } from "../../contracts/capability.ts";
+import type { LearningApplication } from "./types.ts";
+import type { AdjustPlanInput, CreatePlanInput, FeedbackInput, LearningContext, LearningFeedback, LearningPlan, LearningProgress, LearningResult, LearningTask, UpdateTaskInput } from "./contracts.ts";
+import type { LearningRepository } from "./repository.ts";
+import { newId, taskById } from "./repository.ts";
 export class LearningService implements LearningApplication {
-  private readonly repository: LearningRepository;
-  private readonly now: () => Date;
-  constructor(repository: LearningRepository, now: () => Date = () => new Date()) { this.repository = repository; this.now = now; }
-
-  async getActivePlan(ctx: ModuleContext, input: { includeTasks?: boolean }) {
-    const parsed = getActivePlanSchema.parse(input);
-    return this.repository.getActivePlan(ctx.ownerId, parsed.includeTasks);
-  }
-
-  async getTodayTasks(ctx: ModuleContext, input: { date?: string }) {
-    const date = getTodayTasksSchema.parse(input).date ?? this.now().toISOString().slice(0, 10);
-    return this.repository.getTodayTasks(ctx.ownerId, date);
-  }
-
-  async getLearningProgress(ctx: ModuleContext, input: { planId?: string }) {
-    const parsed = getLearningProgressSchema.parse(input);
-    const plan = parsed.planId ? await this.repository.getPlan(ctx.ownerId, parsed.planId, true) : await this.repository.getActivePlan(ctx.ownerId, true);
-    if (!plan) throw new LearningError("NOT_FOUND", "学习计划不存在");
-    const progress = planProgress(plan);
-    const current = plan.stages.find(stage => (stage.tasks ?? []).some(task => task.status !== "completed")) ?? plan.stages.at(-1);
-    return { planId: plan.planId, planVersion: plan.version, ...progress, currentStageId: current?.stageId, currentStageProgressPercent: current ? stageProgress(current.tasks ?? []) : undefined };
-  }
-
-  getPlanProgress(ctx: ModuleContext, input: { planId?: string }) { return this.getLearningProgress(ctx, input); }
-
-  async createLearningPlan(command: CreateLearningPlanCommand) {
-    try {
-      const payload = createLearningPlanSchema.parse(command.payload);
-      const start = new Date(`${payload.startDate}T00:00:00Z`).getTime();
-      const end = new Date(`${payload.endDate}T00:00:00Z`).getTime();
-      const span = Math.max(1, Math.floor((end - start) / 86_400_000) + 1);
-      if (span < payload.stages.length) throw new LearningError("INVALID_ARGUMENT", "计划日期范围必须覆盖所有学习阶段", false, ["startDate", "endDate", "stages"]);
-      const stages = payload.stages.map((stage, index) => {
-        const stageStart = new Date(start + Math.floor(index * span / payload.stages.length) * 86_400_000).toISOString().slice(0, 10);
-        const stageEnd = new Date(start + (Math.floor((index + 1) * span / payload.stages.length) - 1) * 86_400_000).toISOString().slice(0, 10);
-        return { ...stage, startDate: stageStart, endDate: stageEnd };
-      });
-      const plan = await this.withIdempotency(command, "create_learning_plan", () => this.repository.createPlan({ ...payload, ownerId: command.context.ownerId, stages }));
-      return result(plan, "学习计划草案已保存", plan.planId, plan.version, plan.status === "draft" ? "draft_created" : "applied");
-    } catch (error) { return rejected(error); }
-  }
-
-  async updateTaskStatus(command: UpdateTaskStatusCommand) {
-    try {
-      this.requireVersion(command.expectedVersion);
-      const payload = updateTaskStatusSchema.parse(command.payload);
-      const task = await this.withIdempotency(command, "update_learning_task", () => this.repository.updateTaskStatus(command.context.ownerId, payload.taskId, payload.status, payload.actualMinutes, command.expectedVersion));
-      if (!task) throw new LearningError("NOT_FOUND", "学习任务不存在");
-      return result(task, "学习任务状态已更新", task.taskId);
-    } catch (error) { return rejected(error); }
-  }
-
-  async recordLearningFeedback(command: RecordLearningFeedbackCommand) {
-    try {
-      this.requireVersion(command.expectedVersion);
-      const payload = recordLearningFeedbackSchema.parse(command.payload);
-      const feedback = await this.withIdempotency(command, "record_learning_feedback", () => this.repository.recordFeedback(command.context.ownerId, payload, command.expectedVersion));
-      if (!feedback) throw new LearningError("NOT_FOUND", "学习计划或任务不存在");
-      return result(feedback, "学习反馈已记录", feedback.feedbackId);
-    } catch (error) { return rejected(error); }
-  }
-
-  async adjustLearningPlan(command: AdjustLearningPlanCommand) {
-    try {
-      this.requireVersion(command.expectedVersion);
-      const payload = adjustLearningPlanSchema.parse(command.payload);
-      const current = await this.repository.getPlan(command.context.ownerId, payload.planId, false);
-      if (!current) throw new LearningError("NOT_FOUND", "学习计划不存在");
-      const adjusted = await this.withIdempotency(command, "adjust_learning_plan", () => this.repository.adjustPlan(command.context.ownerId, current.planId, command.expectedVersion, current.mode, payload.trigger, payload.reason, payload.operations));
-      if (!adjusted) throw new LearningError("NOT_FOUND", "学习计划不存在");
-      return result(adjusted.plan, "学习计划已按结构化操作调整", adjusted.plan.planId, adjusted.toVersion);
-    } catch (error) { return rejected(error); }
-  }
-
-  async confirmLearningPlan(command: ConfirmLearningPlanCommand) {
-    try {
-      const payload = confirmLearningPlanSchema.parse(command.payload);
-      const plan = await this.withIdempotency(command, "confirm_learning_plan", () => this.repository.confirmPlan(command.context.ownerId, payload.planId, payload.expectedPlanVersion, payload.keepUnfinishedTasks));
-      if (!plan) throw new LearningError("NOT_FOUND", "试验学习计划不存在");
-      return result(plan, "试验学习计划已确认并激活正式计划", plan.planId, plan.version);
-    } catch (error) { return rejected(error); }
-  }
-
-  getTaskContext(ctx: ModuleContext, input: { taskId: string }) { return this.repository.getTaskContext(ctx.ownerId, input.taskId); }
-  getStageContext(ctx: ModuleContext, input: { stageId: string }) { return this.repository.getStageContext(ctx.ownerId, input.stageId); }
-  getCompletedCapabilityKeys(ctx: ModuleContext, input: { planId?: string }) { return this.repository.getCompletedCapabilityKeys(ctx.ownerId, input.planId); }
-
-  private async withIdempotency<T>(command: DomainCommand<unknown>, commandName: string, operation: () => Promise<T>): Promise<T> {
-    if (!command.idempotencyKey?.trim()) throw new LearningError("INVALID_ARGUMENT", "写操作必须提供幂等键", false, ["idempotencyKey"]);
-    const requestHash = hashCommand(command);
-    const previous = await this.repository.getIdempotency(command.context.ownerId, command.idempotencyKey);
-    if (previous) {
-      if (previous.commandName !== commandName || previous.requestHash !== requestHash) throw new LearningError("DUPLICATE_REQUEST", "相同幂等键对应了不同的请求参数");
-      return clone(previous.result as T);
-    }
-    const output = await operation();
-    await this.repository.saveIdempotency(command.context.ownerId, command.idempotencyKey, commandName, command.context.requestId ?? "unknown", requestHash, output);
-    return output;
-  }
-
-  private requireVersion(version?: number) { if (version === undefined) throw new LearningError("INVALID_ARGUMENT", "写入已有学习计划时必须提供 expectedVersion", false, ["expectedVersion"]); }
+  private readonly repo: LearningRepository;
+  constructor(repo: LearningRepository) { this.repo = repo; }
+  async getActivePlan(ctx: LearningContext, input: { includeTasks?: boolean }) { const plan = await this.repo.getPlan(ctx.ownerId); if (!plan || input.includeTasks !== false) return plan; return { ...plan, stages: plan.stages.map(stage => ({ ...stage, tasks: [] })) }; }
+  async listPlans(ctx: LearningContext) { return (this.repo.listPlans ? await this.repo.listPlans(ctx.ownerId) : []).filter(plan => plan.status === "draft"); }
+  async getTodayTasks(ctx: LearningContext, input: { date?: string }) { const plan = await this.repo.getPlan(ctx.ownerId); const date = input.date ?? new Date().toISOString().slice(0, 10); return plan?.stages.flatMap(stage => stage.tasks).filter(task => !task.scheduleDate || task.scheduleDate === date) ?? []; }
+  async getLearningProgress(ctx: LearningContext, input: { planId?: string }): Promise<LearningProgress | null> { const plan = await this.repo.getPlan(ctx.ownerId, input.planId); if (!plan) return null; const tasks = plan.stages.flatMap(x => x.tasks); const done = tasks.filter(x => x.status === "completed").length; const stage = plan.stages.find(x => x.tasks.some(task => task.status !== "completed")); const stageTasks = stage?.tasks ?? []; return { planId: plan.id, planVersion: plan.version, totalTasks: tasks.length, completedTasks: done, progressPercent: tasks.length ? Math.round(done / tasks.length * 100) : 0, currentStageId: stage?.id, currentStageProgressPercent: stageTasks.length ? Math.round(stageTasks.filter(x => x.status === "completed").length / stageTasks.length * 100) : undefined }; }
+  async createLearningPlan(command: DomainCommand<CreatePlanInput>) { const now = new Date().toISOString(); const plan: LearningPlan = { id: newId(), ownerId: command.context.ownerId, mode: command.payload.mode, status: "draft", sourceProfileVersion: command.payload.sourceProfileVersion, sourceCareerPlanVersion: command.payload.sourceCareerPlanVersion, targetJobId: command.payload.targetJobId, startDate: command.payload.startDate, endDate: command.payload.endDate, weeklyMinutes: command.payload.weeklyMinutes, version: 1, learningGoals: command.payload.learningGoals, sources: command.payload.sources, stages: command.payload.stages.map((stage, index) => ({ id: newId(), planId: "", order: index + 1, title: stage.title, objective: stage.objective, status: "todo", tasks: stage.tasks.map(task => ({ id: newId(), planId: "", stageId: "", title: task.title, description: task.description, taskType: task.taskType, status: "todo", estimatedMinutes: task.estimatedMinutes, actualMinutes: null, capabilityKey: task.capabilityKey, evidenceRequired: task.evidenceRequired ?? false })) })), updatedAt: now }; plan.stages.forEach(stage => { stage.planId = plan.id; stage.tasks.forEach(task => { task.planId = plan.id; task.stageId = stage.id; }); }); await this.repo.savePlan(plan); return this.result({ plan }, "学习计划草案已保存", true, plan.id, 1); }
+  async updateTaskStatus(command: DomainCommand<UpdateTaskInput>) { const plan = await this.repo.getPlan(command.context.ownerId); const task = plan && taskById(plan, command.payload.taskId); if (!plan || !task) return this.reject("任务不存在", "NOT_FOUND"); task.status = command.payload.status; if (command.payload.actualMinutes !== undefined) task.actualMinutes = command.payload.actualMinutes; plan.version++; plan.updatedAt = new Date().toISOString(); await this.repo.savePlan(plan); return this.result({ task }, "学习任务状态已更新", true, task.id, plan.version); }
+  async recordLearningFeedback(command: DomainCommand<FeedbackInput>) { const plan = await this.repo.getPlan(command.context.ownerId, command.payload.planId); if (!plan) return this.reject("学习计划不存在", "NOT_FOUND"); const feedback: LearningFeedback = { id: newId(), ownerId: command.context.ownerId, ...command.payload, createdAt: new Date().toISOString() }; await this.repo.saveFeedback(feedback); return this.result({ feedback }, "学习反馈已记录", true, feedback.id, plan.version); }
+  async adjustLearningPlan(command: DomainCommand<AdjustPlanInput>) { const plan = await this.repo.getPlan(command.context.ownerId, command.payload.planId); if (!plan) return this.reject("学习计划不存在", "NOT_FOUND"); for (const operation of command.payload.operations) { if (operation.type === "reschedule" && operation.taskId && operation.scheduleDate) { const task = taskById(plan, operation.taskId); if (task) task.scheduleDate = operation.scheduleDate; } if (operation.type === "replace_resource" && operation.taskId && operation.resource) { const task = taskById(plan, operation.taskId); if (task) task.description = operation.resource; } } plan.version++; plan.updatedAt = new Date().toISOString(); await this.repo.savePlan(plan); return this.result({ plan, adjustment: command.payload }, "学习计划已调整", true, plan.id, plan.version); }
+  async confirmLearningPlan(command: DomainCommand<{ planId: string; expectedPlanVersion: number; keepUnfinishedTasks?: boolean }>) { const plan = await this.repo.getPlan(command.context.ownerId, command.payload.planId); if (!plan) return this.reject("学习计划不存在", "NOT_FOUND"); if (plan.version !== command.payload.expectedPlanVersion) return this.reject("学习计划版本已变化", "VERSION_CONFLICT"); if (plan.mode !== "trial" || !["draft", "active"].includes(plan.status)) return this.reject("当前计划不可确认", "INVALID_STATE"); plan.mode = "final"; plan.status = "active"; plan.version++; plan.updatedAt = new Date().toISOString(); await this.repo.savePlan(plan); return this.result({ plan }, "学习计划已确认并激活", true, plan.id, plan.version); }
+  private result<T>(data: T, summary: string, changed = false, entityId?: string, version?: number): LearningResult<T> { return { ok: true, changed, domain: "learning", status: changed ? "applied" : "read", summary, data, ...(entityId ? { entityId } : {}), ...(version ? { version } : {}) }; }
+  private reject(summary: string, code: CapabilityErrorCode): LearningResult<never> { return { ok: false, changed: false, domain: "learning", status: "rejected", summary, error: { code, message: summary, retryable: false } }; }
 }
-
-export function emptyContext(ownerId: string): ModuleContext { return { ownerId, requestId: randomUUID() }; }

@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import test from "node:test";
-import { createPowuServer } from "../src/server.ts";
+import { createPowuServer, resetOAuthSessionsForTests } from "../src/server.ts";
 import { ChatService } from "../src/modules/chat/service.ts";
 import type { ChatStore, ChatRuntime } from "../src/modules/chat/contracts.ts";
 import type { KnowledgeStore } from "../src/modules/knowledge/contracts.ts";
+import { createDefaultCapabilityRegistry } from "../src/app/composition-root.ts";
 
 test("chat endpoint forwards raw input and streams text events", async t => {
   const store: ChatStore = { async create() { return { sessionId: "00000000-0000-4000-8000-000000000001", createdAt: new Date().toISOString() }; }, async list() { return []; }, async begin(_owner, input) { return { sessionId: input.session_id ?? "00000000-0000-4000-8000-000000000001", history: [], finish: async () => {}, release: async () => {} }; }, async get() { return []; } };
@@ -14,6 +16,88 @@ test("chat endpoint forwards raw input and streams text events", async t => {
   const response = await fetch(`http://127.0.0.1:${address.port}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "你好", request_id: "00000000-0000-4000-8000-000000000002" }) });
   assert.equal(response.status, 200); const text = await response.text(); assert.match(text, /收到：你好/); assert.match(text, /event: complete/);
   const retired = await fetch(`http://127.0.0.1:${address.port}/api/routes`, { method: "POST", body: "{}" }); assert.equal(retired.status, 410);
+});
+
+test("画像读取接口返回 Profile Tool 的真实数据和完善度", async t => {
+  const server = createPowuServer({ chatService: new ChatService({ create: async () => ({ sessionId: "00000000-0000-4000-8000-000000000001", createdAt: new Date().toISOString() }), list: async () => [], begin: async () => { throw new Error("unused"); }, get: async () => null }, { run: async () => [] }), capabilityRegistry: createDefaultCapabilityRegistry() }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/growth/profile`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.profile.facts.length, 0);
+  assert.equal(body.completion.percentage, 0);
+});
+
+test("career growth endpoint returns saved jobs without selecting one", async t => {
+  const registry = createDefaultCapabilityRegistry();
+  const save = registry.list().find(capability => capability.name === "save_target_job");
+  assert.ok(save);
+  const token = "test-career-owner";
+  const owner = `anonymous:${createHash("sha256").update(token).digest("hex")}`;
+  const saved = await save.execute({ ownerId: owner, requestId: "career-read-test", operationKey: "career-save-test" }, { title: "后端平台工程师", directionCode: "backend", description: "负责 TypeScript 和 PostgreSQL 平台服务开发，维护 REST API。" });
+  assert.equal(saved.ok, true);
+  const server = createPowuServer({ capabilityRegistry: registry }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
+  const cookie = `powu_owner=${token}`;
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/growth/career`, { headers: { cookie } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.jobs.length, 1);
+  assert.equal(body.jobs[0].title, "后端平台工程师");
+  assert.equal(body.plan, null);
+});
+
+test("learning growth endpoint returns saved draft plan and today's tasks", async t => {
+  const registry = createDefaultCapabilityRegistry();
+  const create = registry.list().find(capability => capability.name === "create_learning_plan");
+  assert.ok(create);
+  const token = "test-learning-owner";
+  const owner = `anonymous:${createHash("sha256").update(token).digest("hex")}`;
+  const saved = await create.execute({ ownerId: owner, requestId: "learning-read-test", operationKey: "learning-save-test" }, { mode: "trial", sourceProfileVersion: 1, startDate: "2026-09-14", endDate: "2026-10-12", weeklyMinutes: 360, learningGoals: ["后端平台工程"], stages: [{ title: "TypeScript 基础", objective: "掌握类型系统", tasks: [{ title: "完成类型练习", description: "完成一组 TypeScript 类型练习", taskType: "practice", estimatedMinutes: 60 }] }] });
+  assert.equal(saved.ok, true);
+  const server = createPowuServer({ capabilityRegistry: registry }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/growth/learning`, { headers: { cookie: `powu_owner=${token}` } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.plan.status, "draft");
+  assert.equal(body.plan.stages[0].title, "TypeScript 基础");
+  assert.equal(body.tasks.length, 1);
+});
+
+test("interview growth endpoint returns ended interview history", async t => {
+  const registry = createDefaultCapabilityRegistry();
+  const start = registry.list().find(capability => capability.name === "start_interview");
+  const finish = registry.list().find(capability => capability.name === "finish_interview");
+  assert.ok(start && finish);
+  const token = "test-interview-owner";
+  const owner = `anonymous:${createHash("sha256").update(token).digest("hex")}`;
+  const started = await start.execute({ ownerId: owner, requestId: "interview-start-test", operationKey: "interview-start-test" }, { target: { kind: "skills", id: "typescript" }, questionCount: 2 });
+  assert.equal(started.ok, true);
+  const interviewId = (started.data as { interview?: { interviewId: string } }).interview?.interviewId;
+  assert.ok(interviewId);
+  await finish.execute({ ownerId: owner, requestId: "interview-finish-test", operationKey: "interview-finish-test" }, { interviewId });
+  const server = createPowuServer({ capabilityRegistry: registry }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/growth/interviews`, { headers: { cookie: `powu_owner=${token}` } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.items.length, 1);
+  assert.equal(body.items[0].status, "ended_early");
+});
+
+test("interview history reflects a submitted answer", async () => {
+  const registry = createDefaultCapabilityRegistry();
+  const start = registry.list().find(capability => capability.name === "start_interview");
+  const submit = registry.list().find(capability => capability.name === "submit_interview_answer");
+  const records = registry.list().find(capability => capability.name === "get_interview_records");
+  assert.ok(start && submit && records);
+  const owner = "interview-answer-history-owner";
+  const context = { ownerId: owner, requestId: "interview-answer-history", operationKey: "interview-answer-history" };
+  const started = await start.execute(context, { target: { kind: "skills", id: "typescript" }, questionCount: 2 });
+  assert.equal(started.ok, true);
+  const interview = (started.data as { interview: { interviewId: string; questions: Array<{ questionId: string }> } }).interview;
+  const answered = await submit.execute({ ...context, requestId: "interview-answer-history-submit", operationKey: "interview-answer-history-submit" }, { interviewId: interview.interviewId, questionId: interview.questions[0].questionId, answer: "我完成过一次 TypeScript 服务重构。" });
+  assert.equal(answered.ok, true);
+  const listed = await records.execute({ ...context, requestId: "interview-answer-history-read", operationKey: "interview-answer-history-read" }, {});
+  assert.equal((listed.data as { items: Array<{ answeredCount: number }> }).items[0].answeredCount, 1);
 });
 
 test("chat request rejects missing protocol fields", async t => {
@@ -51,6 +135,19 @@ test("session endpoints isolate sessions by owner cookie", async t => {
   const hidden = await fetch(`http://127.0.0.1:${address.port}/api/sessions/00000000-0000-4000-8000-000000000010`); assert.equal(hidden.status, 404);
 });
 
+test("anonymous cookie keeps the same owner after a server restart", async t => {
+  const sessions = new Map<string, Array<{ session_id: string; created_at: string; message_count: number; preview: string | null }>>();
+  const store: ChatStore = {
+    async create(owner) { const session = { session_id: "00000000-0000-4000-8000-000000000011", created_at: new Date().toISOString(), message_count: 0, preview: null }; sessions.set(owner, [session]); return { sessionId: session.session_id, createdAt: session.created_at }; },
+    async list(owner) { return sessions.get(owner) ?? []; },
+    async begin() { throw new Error("unused"); },
+    async get() { return null; },
+  };
+  const open = async () => { const server = createPowuServer({ chatService: new ChatService(store, { run: async () => [] }) }); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string"); return { server, base: `http://127.0.0.1:${address.port}` }; };
+  const first = await open(); const created = await fetch(`${first.base}/api/sessions`, { method: "POST" }); const cookie = created.headers.get("set-cookie")?.split(";", 1)[0]; assert.ok(cookie); await new Promise<void>(resolve => first.server.close(() => resolve()));
+  const second = await open(); t.after(() => second.server.close()); const listed = await fetch(`${second.base}/api/sessions`, { headers: { cookie } }); assert.equal((await listed.json()).sessions.length, 1);
+});
+
 test("authenticated sessions use the Zhihu uid instead of the anonymous cookie owner", async t => {
   const sessions = new Map<string, Array<{ session_id: string; created_at: string; message_count: number; preview: string | null }>>();
   let nextId = 20;
@@ -72,6 +169,34 @@ test("authenticated sessions use the Zhihu uid instead of the anonymous cookie o
   const bobCookie = await login("bob"); const bobList = await fetch(`${base}/api/sessions`, { headers: { cookie: bobCookie } }); assert.deepEqual((await bobList.json()).sessions, []);
   const bobHidden = await fetch(`${base}/api/sessions/${aliceSessionId}`, { headers: { cookie: bobCookie } }); assert.equal(bobHidden.status, 404);
   const aliceAgain = await login("alice"); const aliceList = await fetch(`${base}/api/sessions`, { headers: { cookie: aliceAgain } }); assert.equal((await aliceList.json()).sessions.length, 2);
+});
+
+test("signed OAuth cookie keeps the authenticated owner after a server restart", async t => {
+  const sessions = new Map<string, Array<{ session_id: string; created_at: string; message_count: number; preview: string | null }>>();
+  const store: ChatStore = {
+    async create(owner) { const session = { session_id: "00000000-0000-4000-8000-000000000012", created_at: new Date().toISOString(), message_count: 0, preview: null }; sessions.set(owner, [ ...(sessions.get(owner) ?? []), session ]); return { sessionId: session.session_id, createdAt: session.created_at }; },
+    async list(owner) { return sessions.get(owner) ?? []; },
+    async begin() { throw new Error("unused"); },
+    async get() { return null; },
+  };
+  const oauth = {
+    authorizationUrl: (state: string) => `https://example.test/authorize?state=${encodeURIComponent(state)}`,
+    exchangeCode: async (code: string) => ({ accessToken: `token-${code}`, expiresAt: Date.now() + 60_000 }),
+    getUserInfo: async (token: string) => ({ uid: token.slice("token-".length), fullname: "Alice" }),
+  };
+  const open = async () => { const server = createPowuServer({ chatService: new ChatService(store, { run: async () => [] }), oauth }); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string"); return { server, base: `http://127.0.0.1:${address.port}` }; };
+  const first = await open();
+  const start = await fetch(`${first.base}/auth/zhihu/start`, { redirect: "manual" });
+  const ownerCookie = start.headers.get("set-cookie")?.split(";", 1)[0]; assert.ok(ownerCookie);
+  const callback = await fetch(`${first.base}/auth/zhihu/callback?authorization_code=alice`, { headers: { cookie: ownerCookie }, redirect: "manual" });
+  const callbackCookies = callback.headers.get("set-cookie")?.split(/,\s*(?=[^;]+=)/).map(value => value.split(";", 1)[0]) ?? [];
+  const cookie = [...new Set([ownerCookie, ...callbackCookies])].join("; ");
+  const created = await fetch(`${first.base}/api/sessions`, { method: "POST", headers: { cookie } }); assert.equal(created.status, 201);
+  await new Promise<void>(resolve => first.server.close(() => resolve()));
+  resetOAuthSessionsForTests();
+  const second = await open(); t.after(() => second.server.close());
+  const listed = await fetch(`${second.base}/api/sessions`, { headers: { cookie } });
+  assert.equal((await listed.json()).sessions.length, 1);
 });
 
 test("knowledge files support multipart upload, owner isolation and inline preview", async t => {
