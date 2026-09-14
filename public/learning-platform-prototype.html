@@ -97,7 +97,9 @@ views.learning={title:'学习成长',html:()=>`<section class="view"><div class=
     document.addEventListener('click',event=>{const target=event.target.closest('[data-focus]');if(target){document.getElementById(target.dataset.focus)?.focus()}});
     render('home');
   </script>
-<script>
+<!-- 下方为早期 Evidence 原型脚本，已被本文件末尾的联调脚本取代；
+     保留作对照，置为数据块以免同时生效。 -->
+<script type="text/plain" data-superseded="evidence-prototype">
 (() => {
   const api = async (path, options = {}) => { const r = await fetch(path, { ...options, headers: { 'content-type':'application/json', ...(options.headers||{}) } }); const p = await r.json().catch(()=>({})); if(!r.ok) throw new Error(p.message||p.error||`请求失败（${r.status}）`); return p.data ?? p; };
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -110,5 +112,375 @@ views.learning={title:'学习成长',html:()=>`<section class="view"><div class=
   const start=()=>`<article class="card module-body"><h2>开始一次模拟面试</h2><p class="view-intro">请填写训练类型、目标 ID 和题量。</p><div class="search"><select id="interview-kind"><option value="skills">能力</option><option value="job">岗位</option><option value="project">项目</option></select><input id="interview-target" placeholder="目标 ID"><input id="interview-count" type="number" min="1" max="20" value="5"><button class="primary" id="start-interview">开始面试</button></div></article>`;
   async function loadInterviews(){const root=document.querySelector('#interview-root');try{const d=await api('/api/evidence/interviews');const rows=d.interviews||d.items||(Array.isArray(d)?d:[]);const active=rows.find(x=>x.status==='active'||x.status==='in_progress');if(active){const id=active.interviewId||active.id;const s=await api(`/api/evidence/interviews/${encodeURIComponent(id)}`);const q=s.questions?.find(x=>!x.answer)||s.questions?.[0];root.innerHTML=`<article class="card module-body"><div class="card-head"><h2>模拟面试</h2><span class="badge">${esc(s.status||'进行中')}</span></div><p>${esc(q?.prompt||q?.question||'题目待生成')}</p><textarea id="answer-input" class="interview-answer" placeholder="输入你的回答"></textarea><button class="primary" id="submit-answer">提交回答</button><button class="secondary" id="finish-interview">结束面试</button><div id="answer-feedback" class="interview-feedback">回答提交后显示反馈。</div></article>`;root.querySelector('#submit-answer').onclick=async()=>{const answer=root.querySelector('#answer-input').value.trim();if(!answer)return toastIt('请先输入回答');try{await api(`/api/evidence/interviews/${encodeURIComponent(id)}/answers`,{method:'POST',body:JSON.stringify({questionId:q.questionId,answer})});root.querySelector('#answer-feedback').textContent='回答已提交，反馈正在生成。';}catch(e){toastIt(e.message);}};root.querySelector('#finish-interview').onclick=async()=>{try{await api(`/api/evidence/interviews/${encodeURIComponent(id)}/finish`,{method:'POST',body:'{}'});loadInterviews();}catch(e){toastIt(e.message);}};}else{root.innerHTML=start();root.querySelector('#start-interview')?.addEventListener('click',async()=>{const target=root.querySelector('#interview-target').value.trim();if(!target)return toastIt('请填写目标 ID');try{await api('/api/evidence/interviews',{method:'POST',body:JSON.stringify({target:{kind:root.querySelector('#interview-kind').value,id:target},questionCount:Number(root.querySelector('#interview-count').value)||5})});loadInterviews();}catch(e){toastIt(e.message);}});}}catch(e){root.innerHTML=`<div class="card module-body"><p class="view-intro">${esc(e.message)}。请通过项目服务地址打开页面。</p></div>`;}}
 })();
+</script>
+<script>
+  // Evidence & Interview 联调脚本：页面只负责采集输入、透传请求、展示服务端结果。
+  // 接口与 docs/队员D-Evidence与Interview模块技术设计与接口契约.md 的 13 项工具一致；
+  // 本脚本取代上方早期的 Evidence 原型脚本（那段只保留作对照，不再被调用）。
+  (() => {
+    const kindText = {
+      activity: '学习活动', project_outcome: '项目成果', task_change: '任务变化',
+      learning_feedback: '学习反馈', plan_adjustment: '计划调整',
+      assessment_result: '阶段测试结果', interview_result: '面试结果'
+    };
+    const statusText = {
+      active: '进行中', preparing: '准备中', preparation_failed: '题目生成失败',
+      completed: '已完成', ended_early: '提前结束', succeeded: '已生成',
+      failed: '生成失败', not_started: '尚未生成'
+    };
+    const verificationText = {
+      no_evidence: '暂无证据', pending: '待评估', available: '已有可复核结论', needs_review: '需要重新评估'
+    };
+    const supportText = { insufficient: '证据不足', partial: '部分支持', supported: '支持' };
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        ...options,
+        headers: { 'content-type': 'application/json', ...(options.headers || {}) }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = payload?.error?.message || payload?.summary || payload?.error || ('请求失败（' + response.status + '）');
+        throw new Error(String(detail));
+      }
+      return payload.data ?? payload;
+    }
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    const fmt = value => value ? new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) : '时间待记录';
+    const rows = value => Array.isArray(value) ? value : [];
+    const lines = (values, render) => values.length ? values.map(render).join('<br>') : '暂无';
+    const offline = error => `<p class="view-intro">${esc(error.message)}。请通过项目服务地址打开本页面，而不是直接双击文件。</p>`;
+    function coverageNote(coverage, range) {
+      const scope = range && range.from && range.to ? `${fmt(range.from)} – ${fmt(range.to)}` : '';
+      if (!coverage) return scope;
+      const missing = rows(coverage.missing).map(item => item.source);
+      return [scope, coverage.complete ? '来源完整' : `部分来源未覆盖：${missing.join('、')}`].filter(Boolean).join(' · ');
+    }
+
+    const baseRender = render;
+    views.record = { title: '学习记录', html: () => `
+      <section class="view evidence-view">
+        <div class="view-head">
+          <div><p class="eyebrow">LEARNING RECORD</p><h1>把每一次学习都留下来。</h1>
+          <p class="view-intro">完成、卡点、成果和能力证据都来自本模块服务，页面不预设任何学习结论。</p></div>
+          <div class="record-actions">
+            <button class="secondary" id="generate-review">生成阶段复盘</button>
+            <button class="primary" data-view="learning">查看学习计划　→</button>
+          </div>
+        </div>
+        <div class="evidence-grid">
+          <div class="evidence-stack">
+            <article class="card">
+              <div class="card-head"><h2>学习时间线</h2><span class="badge" id="record-count">加载中</span></div>
+              <div class="module-body" id="record-list">正在读取学习记录…</div>
+            </article>
+            <article class="card">
+              <div class="card-head"><h2>单条记录</h2></div>
+              <div class="module-body" id="record-detail"><p class="view-intro">点击上方任意记录查看详情、待补关联和能力评估入口。</p></div>
+            </article>
+          </div>
+          <article class="card">
+            <div class="card-head"><h2>阶段复盘</h2><span class="badge" id="review-state">—</span></div>
+            <div class="module-body review-copy" id="review-list">正在读取复盘…</div>
+          </article>
+        </div>
+        <article class="card">
+          <div class="card-head"><h2>能力证据</h2><span class="badge" id="skill-state">—</span></div>
+          <div class="module-body evidence-list" id="skill-list">正在读取能力证据…</div>
+        </article>
+        <p class="view-intro" id="record-coverage"></p>
+      </section>` };
+
+    views.interview = { title: '模拟面试', html: () => `
+      <section class="view interview-view">
+        <div class="view-head">
+          <div><p class="eyebrow">AI MOCK INTERVIEW</p><h1>先练习，再走进真实面试。</h1>
+          <p class="view-intro">训练范围由你指定，回答会原样保存并生成可复查的反馈。</p></div>
+        </div>
+        <div id="interview-root">正在读取面试会话…</div>
+      </section>` };
+
+    render = name => {
+      baseRender(name);
+      if (name === 'record') loadRecords();
+      if (name === 'interview') loadInterviews();
+    };
+
+    /* ------------------------------ 学习记录 ------------------------------ */
+    async function loadRecords() {
+      const listEl = document.querySelector('#record-list');
+      const countEl = document.querySelector('#record-count');
+      const coverageEl = document.querySelector('#record-coverage');
+      document.querySelector('#generate-review').addEventListener('click', generateReview);
+      try {
+        const data = await api('/api/evidence/records?weekOf=' + encodeURIComponent(new Date().toISOString()));
+        const list = rows(data.page?.items);
+        countEl.textContent = `${list.length} 条`;
+        coverageEl.textContent = coverageNote(data.coverage, data.range);
+        listEl.innerHTML = list.length
+          ? `<div class="evidence-timeline">${list.map(recordRow).join('')}</div>`
+          : '<p class="view-intro">本周还没有学习记录。完成一次学习后记录，时间线就会显示真实的用时与来源。</p>';
+        listEl.querySelectorAll('[data-record]').forEach(button =>
+          button.addEventListener('click', () => loadRecordDetail(button.dataset.record)));
+      } catch (error) { listEl.innerHTML = offline(error); }
+      await loadReviews();
+      await loadSkills();
+    }
+
+    function recordRow(record) {
+      const duration = record.durationMinutes == null ? '用时未记录' : `${record.durationMinutes} 分钟`;
+      const source = record.source?.domain === 'learning' ? '来自学习计划' : '本模块记录';
+      const pending = rows(record.pendingAssociations).length || rows(record.missingInformation).length;
+      return `<button class="evidence-event" data-record="${esc(record.recordId)}" style="width:100%;text-align:left;background:none;border:0;padding:0;cursor:pointer">
+        <i></i><div>
+          <strong>${esc(record.title)}</strong>
+          <span>${esc(kindText[record.kind] || record.kind)} · ${esc(fmt(record.occurredAt))} · ${esc(duration)} · ${esc(source)}${pending ? ' · 有待补充信息' : ''}</span>
+        </div></button>`;
+    }
+
+    async function loadRecordDetail(recordId) {
+      const el = document.querySelector('#record-detail');
+      el.innerHTML = '正在读取记录详情…';
+      try {
+        const data = await api('/api/evidence/records/' + encodeURIComponent(recordId));
+        const record = data.record;
+        const skills = rows(record.skillRefs);
+        const pending = rows(record.pendingAssociations);
+        const missing = rows(record.missingInformation);
+        el.innerHTML = `
+          <strong>${esc(record.title)}</strong>
+          <p>${esc(record.content)}</p>
+          <p class="view-intro">${esc(kindText[record.kind] || record.kind)} · 版本 ${esc(record.version)} · 材料 ${rows(record.materials).length} 项（${esc(record.materialState)}）${record.contributionPending ? ' · 本人贡献待补充' : ''}</p>
+          <p class="view-intro">关联能力：${skills.length ? esc(skills.map(skill => skill.name).join('、')) : '未关联'}</p>
+          ${pending.length ? `<p class="view-intro">待确认关联：${esc(pending.map(item => `${item.source}（${item.reason}）`).join('；'))}</p>` : ''}
+          ${missing.length ? `<p class="view-intro">需要补充：${esc(missing.join('；'))}</p>` : ''}
+          <button class="secondary" id="assess-record">评估该记录支持的能力</button>
+          <div class="interview-feedback" id="assess-result"></div>`;
+        document.querySelector('#assess-record').addEventListener('click', () => assessRecord(recordId, skills));
+      } catch (error) { el.innerHTML = offline(error); }
+    }
+
+    async function assessRecord(recordId, skills) {
+      const resultEl = document.querySelector('#assess-result');
+      if (!skills.length) { toastIt('这条记录还没有关联能力标识，无法评估'); return; }
+      resultEl.textContent = '正在评估…';
+      try {
+        const data = await api('/api/evidence/assessments', {
+          method: 'POST',
+          body: JSON.stringify({ evidenceIds: [recordId], skillIds: skills.map(skill => skill.skillId) })
+        });
+        const findings = rows(data.assessment.findings);
+        resultEl.innerHTML = `
+          <strong>评估结果</strong><br>
+          ${lines(findings, finding => `${esc(finding.skill.name)}：${esc(supportText[finding.support] || finding.support)} · 引用 ${rows(finding.citations).length} 处${rows(finding.limitations).length ? ` · 局限：${esc(finding.limitations.join('；'))}` : ''}`)}
+          <br><span class="view-intro">${esc(data.assessment.criteriaSummary)}</span>`;
+        await loadSkills();
+      } catch (error) { resultEl.textContent = error.message; }
+    }
+
+    async function generateReview() {
+      const to = new Date();
+      const from = new Date(Date.now() - 7 * 86400000);
+      try {
+        await api('/api/evidence/reviews', {
+          method: 'POST',
+          body: JSON.stringify({ from: from.toISOString(), to: to.toISOString() })
+        });
+        await loadReviews();
+        toastIt('阶段复盘已生成');
+      } catch (error) { toastIt(error.message); }
+    }
+
+    async function loadReviews() {
+      const el = document.querySelector('#review-list');
+      const stateEl = document.querySelector('#review-state');
+      try {
+        const data = await api('/api/evidence/reviews');
+        const summaries = rows(data.page?.items);
+        if (!summaries.length) {
+          stateEl.textContent = '暂无';
+          el.innerHTML = '<p class="view-intro">还没有阶段复盘。选择一段时间后点击“生成阶段复盘”。</p>';
+          return;
+        }
+        const detail = await api('/api/evidence/reviews/' + encodeURIComponent(summaries[0].reviewId));
+        const review = detail.review;
+        stateEl.textContent = statusText[review.status] || review.status;
+        el.innerHTML = `
+          <strong>${esc(fmt(review.range.from))} – ${esc(fmt(review.range.to))}</strong>
+          ${review.sourceChanged ? '<p class="view-intro">生成后有记录被修改或撤回，建议重新生成复盘。</p>' : ''}
+          <p><b>这段时间的进展</b><br>${lines(rows(review.progress), item => `${esc(item.text)}（引用 ${rows(item.citations).length} 处）`)}</p>
+          <p><b>需要关注的卡点</b><br>${lines(rows(review.blockers), item => `${esc(item.observation)}${item.hypothesis ? `（可能原因：${esc(item.hypothesis)}）` : ''}`)}</p>
+          <p><b>下一步建议</b><br>${lines(rows(review.suggestions), item => esc(item.text))}</p>
+          <p class="view-intro">计划调整仍由学习计划模块决定，本模块只给出建议。</p>`;
+      } catch (error) { el.innerHTML = offline(error); }
+    }
+
+    async function loadSkills() {
+      const el = document.querySelector('#skill-list');
+      const stateEl = document.querySelector('#skill-state');
+      try {
+        const data = await api('/api/evidence/skills');
+        const cards = rows(data.page?.items);
+        stateEl.textContent = cards.length ? `${cards.length} 项` : '暂无';
+        el.innerHTML = cards.length ? cards.map(card => {
+          const label = verificationText[card.verification] || card.verification;
+          const latest = rows(card.assessments)[0];
+          return `<div class="evidence-row">
+            <div><strong>${esc(card.skill.name)}</strong>
+            <span>${esc(label)} · 证据 ${rows(card.evidenceIds).length} 条${latest ? ` · 最近评估 ${esc(fmt(latest.createdAt))}` : ''}</span></div>
+            <b class="evidence-state${card.verification === 'available' ? '' : ' pending'}">${esc(label)}</b>
+          </div>`;
+        }).join('') : '<p class="view-intro">还没有能力评估。打开一条带能力标识的记录并执行评估后，这里会显示依据与有效性。</p>';
+      } catch (error) { el.innerHTML = offline(error); }
+    }
+
+    /* ------------------------------ 模拟面试 ------------------------------ */
+    async function loadInterviews() {
+      const root = document.querySelector('#interview-root');
+      try {
+        const data = await api('/api/evidence/interviews');
+        const session = data.session;
+        const history = rows(data.page?.items);
+        root.innerHTML = (session ? sessionMarkup(session) : startMarkup()) + historyMarkup(history);
+        if (session) sessionEvents(session); else startEvents();
+      } catch (error) { root.innerHTML = offline(error); }
+    }
+
+    function startMarkup() {
+      return `<article class="card module-body">
+        <div class="card-head"><h2>开始一次模拟面试</h2><span class="badge">训练范围由你决定</span></div>
+        <p class="view-intro">请填写训练类型和真实目标标识。岗位标识来自职业规划，能力标识来自共享能力目录；缺少依据时服务端会要求先补充。</p>
+        <div class="search">
+          <select id="interview-kind">
+            <option value="skills">能力</option>
+            <option value="job">目标岗位</option>
+            <option value="project">项目</option>
+          </select>
+          <input id="interview-target" placeholder="能力标识（逗号分隔）／岗位标识／项目标识">
+          <input id="interview-count" type="number" min="1" max="20" value="5" title="题量 1-20">
+          <input id="interview-focus" placeholder="可选：重点（如项目细节）">
+          <button class="primary" id="start-interview">开始面试</button>
+        </div>
+        <div class="interview-feedback" id="interview-error"></div>
+      </article>`;
+    }
+
+    function startEvents() {
+      document.querySelector('#start-interview').addEventListener('click', async event => {
+        const button = event.currentTarget;
+        const kind = document.querySelector('#interview-kind').value;
+        const raw = document.querySelector('#interview-target').value.trim();
+        const count = Number(document.querySelector('#interview-count').value) || 5;
+        const focus = document.querySelector('#interview-focus').value.trim();
+        const errorEl = document.querySelector('#interview-error');
+        errorEl.textContent = '';
+        if (!raw) { errorEl.textContent = '请先填写训练范围标识'; return; }
+        const target = kind === 'skills'
+          ? { kind, skillIds: raw.split(',').map(item => item.trim()).filter(Boolean) }
+          : kind === 'job' ? { kind, jobId: raw } : { kind, projectId: raw };
+        button.disabled = true;
+        try {
+          await api('/api/evidence/interviews', {
+            method: 'POST',
+            body: JSON.stringify({ target, questionCount: count, ...(focus ? { focus } : {}) })
+          });
+          await loadInterviews();
+        } catch (error) { errorEl.textContent = error.message; button.disabled = false; }
+      });
+    }
+
+    function sessionMarkup(session) {
+      const question = session.currentQuestion;
+      const lastFeedback = rows(session.answers).at(-1)?.feedback;
+      const report = session.report;
+      const failed = session.status === 'preparation_failed';
+      return `<div class="interview-grid">
+        <article class="card">
+          <div class="card-head"><h2>模拟面试</h2><span class="badge">${esc(statusText[session.status] || session.status)}</span></div>
+          <div class="interview-question">
+            ${failed
+              ? `<p class="view-intro">题目没有生成成功：${esc(rows(session.coverage?.missing).map(item => item.reason).join('；') || '生成服务不可用')}</p>
+                 <button class="primary" id="retry-interview">${esc(session.recovery?.action || '重新生成题目')}</button>`
+              : question
+                ? `<div class="question-meta"><span>第 <b>${esc(question.ordinal)}</b> 题</span><span>共 <b>${esc(session.totalQuestions)}</b> 题</span></div>
+                   <h2>${esc(question.prompt)}</h2>
+                   <textarea class="interview-answer" id="answer-input" placeholder="输入你的回答"></textarea>
+                   <div class="question-actions"><span>回答会被原样保存，并基于实际内容生成反馈。</span>
+                   <button class="primary" id="submit-answer">提交回答</button></div>`
+                : '<p class="view-intro">本场题目已全部作答。</p>'}
+            <div class="interview-feedback" id="answer-feedback">
+              ${lastFeedback
+                ? `<strong>本题反馈（${esc(statusText[lastFeedback.status] || lastFeedback.status)}）</strong><br>
+                   ${rows(lastFeedback.strengths).length ? `优点：${esc(lastFeedback.strengths.join('；'))}<br>` : ''}
+                   ${rows(lastFeedback.issues).map(issue => `${esc(issue.text)}${issue.quote ? `（原话：“${esc(issue.quote)}”）` : ''}`).join('<br>')}
+                   ${rows(lastFeedback.suggestions).length ? `<br>建议：${esc(lastFeedback.suggestions.join('；'))}` : ''}
+                   ${rows(lastFeedback.limitations).length ? `<br><span class="view-intro">局限：${esc(lastFeedback.limitations.join('；'))}</span>` : ''}`
+                : '提交回答后显示服务端反馈。'}
+            </div>
+          </div>
+        </article>
+        <aside class="card interview-side">
+          <div class="card-head"><h2>面试进度</h2><span class="badge">${esc(rows(session.answers).length)} / ${esc(session.totalQuestions ?? '—')}</span></div>
+          <div class="interview-steps">
+            ${rows(session.questions).map(item => `<div class="interview-step${item.ordinal === session.answeredCount + 1 ? ' current' : ''}"><b>${esc(item.ordinal)}</b>${esc(item.category === 'knowledge' ? '知识理解' : item.category === 'project' ? '项目说明' : '表达')}${rows(session.answers).some(answer => answer.questionId === item.questionId) ? ' · 已答' : ''}</div>`).join('')}
+          </div>
+          ${!failed ? '<button class="secondary" id="finish-interview" style="width:100%;margin-top:18px">结束并查看反馈</button>' : ''}
+          ${report
+            ? `<div class="interview-feedback"><strong>整场报告</strong><br>${esc(report.summary)}
+               ${rows(report.findings).length ? `<br>${rows(report.findings).map(finding => `${esc(finding.skill.name)}：${esc(supportText[finding.support] || finding.support)}`).join('；')}` : ''}
+               ${rows(report.recommendations).length ? `<br>建议：${esc(report.recommendations.join('；'))}` : ''}
+               ${rows(report.limitations).length ? `<br><span class="view-intro">局限：${esc(report.limitations.join('；'))}</span>` : ''}</div>`
+            : `<p class="view-intro">报告状态：${esc(statusText[session.reportStatus] || session.reportStatus)}</p>`}
+        </aside>
+      </div>`;
+    }
+
+    function sessionEvents(session) {
+      const errorEl = document.querySelector('#answer-feedback');
+      document.querySelector('#submit-answer')?.addEventListener('click', async event => {
+        const answer = document.querySelector('#answer-input').value.trim();
+        if (!answer) { toastIt('请先输入回答'); return; }
+        event.currentTarget.disabled = true;
+        try {
+          await api(`/api/evidence/interviews/${encodeURIComponent(session.interviewId)}/answers`, {
+            method: 'POST',
+            body: JSON.stringify({ questionId: session.currentQuestion.questionId, answer })
+          });
+          await loadInterviews();
+        } catch (error) { errorEl.textContent = error.message; event.currentTarget.disabled = false; }
+      });
+      document.querySelector('#finish-interview')?.addEventListener('click', async event => {
+        event.currentTarget.disabled = true;
+        try {
+          await api(`/api/evidence/interviews/${encodeURIComponent(session.interviewId)}/finish`, { method: 'POST', body: '{}' });
+          await loadInterviews();
+        } catch (error) { toastIt(error.message); event.currentTarget.disabled = false; }
+      });
+      document.querySelector('#retry-interview')?.addEventListener('click', async event => {
+        event.currentTarget.disabled = true;
+        try {
+          await api('/api/evidence/interviews', {
+            method: 'POST',
+            body: JSON.stringify({ target: session.target, questionCount: session.totalQuestions || 5, startNew: true })
+          });
+          await loadInterviews();
+        } catch (error) { toastIt(error.message); event.currentTarget.disabled = false; }
+      });
+    }
+
+    function historyMarkup(history) {
+      if (!history.length) return '';
+      return `<article class="card" style="margin-top:18px">
+        <div class="card-head"><h2>历史面试</h2><span class="badge">${history.length} 场</span></div>
+        <div class="module-body evidence-list">
+          ${history.map(item => `<div class="evidence-row">
+            <div><strong>${esc(item.target.kind === 'job' ? `岗位 ${item.target.jobId}` : item.target.kind === 'skills' ? `能力 ${rows(item.target.skillIds).join('、')}` : `项目 ${item.target.projectId}`)}</strong>
+            <span>${esc(statusText[item.status] || item.status)} · 已答 ${esc(item.answeredCount)} / ${esc(item.totalQuestions ?? '—')} · ${esc(fmt(item.createdAt))} · 报告：${esc(statusText[item.reportStatus] || item.reportStatus)}</span></div>
+            ${item.summary ? `<b class="evidence-state">${esc(item.summary)}</b>` : ''}
+          </div>`).join('')}
+        </div>
+      </article>`;
+    }
+  })();
 </script></body>
 </html>

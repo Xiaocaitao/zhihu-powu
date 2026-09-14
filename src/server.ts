@@ -21,7 +21,16 @@ import { PostgresCareerRepository } from "./modules/career/postgres-repository.t
 import { PostgresLearningRepository } from "./modules/learning/postgres-repository.ts";
 import { PostgresEvidenceRepository } from "./modules/evidence/postgres-repository.ts";
 import { EvidenceApplication } from "./modules/evidence/application.ts";
-import { EvidenceService } from "./modules/evidence/service.ts";
+import { handleEvidenceHttp } from "./modules/evidence/http.ts";
+import { createEvidenceService } from "./modules/evidence/defaults.ts";
+import { createEvidencePorts } from "./app/evidence-ports.ts";
+import { MockEvidenceGeneration } from "./modules/evidence/generation.ts";
+import { createDoubaoStructuredExecutor } from "./llm/doubao.ts";
+import { createLlmInvoker } from "./llm/invoker.ts";
+import { ProfileService } from "./modules/profile/service.ts";
+import { PostgresSkillRepository } from "./modules/skills/repository.ts";
+import { SharedSkills } from "./modules/skills/service.ts";
+import { initialSkillDefinitions } from "./modules/skills/definitions.ts";
 import { PostgresCatalogRepository } from "./modules/catalog/repository.ts";
 import type { CatalogFilter } from "./modules/catalog/contracts.ts";
 
@@ -103,47 +112,15 @@ export function createPowuServer(options: Options = {}): Server {
         return send(res, 201, { files });
       } catch (error) { return send(res, error instanceof ChatError ? error.status : 400, { ok: false, error: error instanceof ChatError ? error.message : "invalid_upload" }); }
     }
-    // Evidence & Interview MVP routes. All business operations go through the
-    // registered capabilities so owner isolation and result semantics stay in
-    // the module boundary.
-    if (path.startsWith("/api/evidence/") && options.capabilityRegistry) {
-      const ownerId = authenticatedOwner(req, res);
-      const context = { ownerId, requestId: randomUUID(), operationKey: randomUUID() };
-      const find = (name: string) => options.capabilityRegistry!.list().find(capability => capability.name === name);
-      const invoke = async (name: string, input: unknown) => {
-        const capability = find(name);
-        if (!capability) return send(res, 503, { ok: false, error: "evidence_unavailable" });
-        try {
-          const result = await capability.execute(context, input);
-          return send(res, result.ok ? 200 : 400, result);
-        } catch (error) {
-          if (error instanceof ZodError || error instanceof SyntaxError) return send(res, 400, { ok: false, error: "invalid_request" });
-          console.error(`evidence capability ${name} failed`, error);
-          return send(res, 502, { ok: false, error: "evidence_operation_failed" });
-        }
-      };
-      const parts = path.split("/").filter(Boolean);
-      try {
-        if (path === "/api/evidence/records" && req.method === "GET") {
-          const q = new URL(req.url ?? "/", "http://localhost").searchParams;
-          return invoke("get_learning_records", { from: q.get("from") ?? undefined, to: q.get("to") ?? undefined, kind: q.get("kind") ?? undefined, taskId: q.get("taskId") ?? undefined, skillId: q.get("skillId") ?? undefined, limit: q.has("limit") ? Number(q.get("limit")) : undefined, cursor: q.get("cursor") ?? undefined });
-        }
-        if (path === "/api/evidence/records" && req.method === "POST") return invoke("record_learning_evidence", await readBody(req));
-        if (parts[2] === "records" && parts[3] && req.method === "PATCH") return invoke("update_learning_evidence", { ...(await readBody(req)), recordId: parts[3] });
-        if (path === "/api/evidence/skills" && req.method === "GET") { const q = new URL(req.url ?? "/", "http://localhost").searchParams; return invoke("get_skill_evidence", { skillId: q.get("skillId") ?? undefined }); }
-        if (path === "/api/evidence/assessments" && req.method === "POST") return invoke("evaluate_learning_evidence", await readBody(req));
-        if (path === "/api/evidence/reviews" && req.method === "GET") return invoke("get_learning_reviews", {});
-        if (path === "/api/evidence/reviews" && req.method === "POST") return invoke("generate_learning_review", await readBody(req));
-        if (path === "/api/evidence/interviews" && req.method === "GET") return invoke("get_interview_records", {});
-        if (path === "/api/evidence/interviews" && req.method === "POST") return invoke("start_interview", await readBody(req));
-        if (parts[2] === "interviews" && parts[3] && parts.length === 4 && req.method === "GET") return invoke("get_interview_session", { interviewId: parts[3] });
-        if (parts[2] === "interviews" && parts[3] && parts[4] === "answers" && req.method === "POST") return invoke("submit_interview_answer", { ...(await readBody(req)), interviewId: parts[3] });
-        if (parts[2] === "interviews" && parts[3] && parts[4] === "finish" && req.method === "POST") return invoke("finish_interview", { ...(await readBody(req)), interviewId: parts[3] });
-        if (parts[2] === "interviews" && parts[3] && parts[4] === "feedback" && req.method === "GET") { const q = new URL(req.url ?? "/", "http://localhost").searchParams; return invoke("get_interview_feedback", { interviewId: parts[3], questionId: q.get("questionId") ?? undefined }); }
-      } catch (error) {
-        if (error instanceof ZodError || error instanceof SyntaxError || error instanceof ChatError) return send(res, error instanceof ChatError ? error.status : 400, { ok: false, error: "invalid_request" });
-        return send(res, 502, { ok: false, error: "evidence_operation_failed" });
-      }
+    if (path.startsWith("/api/evidence/")) {
+      const result = await handleEvidenceHttp({
+        method: req.method ?? "GET", path,
+        query: new URL(req.url ?? "/", "http://localhost").searchParams,
+        operationKey: req.headers["idempotency-key"],
+        ifMatch: req.headers["if-match"],
+        readJson: () => readBody(req),
+      }, { ownerId: authenticatedOwner(req, res), requestId: randomUUID() }, options.capabilityRegistry);
+      return send(res, result.status, result.body);
     }
     if (path === "/api/growth/profile" && req.method === "GET") {
       if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "growth_unavailable" });
@@ -190,7 +167,8 @@ export function createPowuServer(options: Options = {}): Server {
       try {
         const result = await capability.execute(context, {});
         if (!result.ok) return send(res, 502, { ok: false, error: "records_read_failed" });
-        return send(res, 200, { ok: true, items: (result.data as { items?: unknown[] } | undefined)?.items ?? [] });
+        const data = result.data as { page?: { items?: unknown[] } } | undefined;
+        return send(res, 200, { ok: true, items: data?.page?.items ?? [] });
       } catch (error) { console.error("records read failed", error); return send(res, 502, { ok: false, error: "records_read_failed" }); }
     }
     if (path === "/api/growth/interviews" && req.method === "GET") {
@@ -198,7 +176,7 @@ export function createPowuServer(options: Options = {}): Server {
       const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
       const records = options.capabilityRegistry.list().find(capability => capability.name === "get_interview_records");
       if (!records) return send(res, 503, { ok: false, error: "interview_unavailable" });
-      try { const result = await records.execute(context, {}); if (!result.ok) return send(res, 502, { ok: false, error: "interview_read_failed" }); const data = result.data as { items?: unknown[]; session?: unknown } | undefined; return send(res, 200, { ok: true, items: data?.items ?? [], session: data?.session ?? null }); }
+      try { const result = await records.execute(context, {}); if (!result.ok) return send(res, 502, { ok: false, error: "interview_read_failed" }); const data = result.data as { page?: { items?: unknown[] }; session?: unknown } | undefined; return send(res, 200, { ok: true, items: data?.page?.items ?? [], session: data?.session ?? null }); }
       catch (error) { console.error("interview read failed", error); return send(res, 502, { ok: false, error: "interview_read_failed" }); }
     }
     if (path === "/api/growth/jobs/library" && req.method === "GET") {
@@ -360,5 +338,41 @@ async function readMultipart(req: IncomingMessage): Promise<{ fields: Record<str
   if (!Object.keys(fields).length && !files.length) throw new ChatError("body_required", 400);
   return { fields, files };
 }
-export async function startPowuServer(options: Options = {}): Promise<Server> { const pool = createPool(); await ensureSchema(pool); const evidence = new EvidenceApplication(new EvidenceService(), new PostgresEvidenceRepository(pool)); const capabilityRegistry = options.capabilityRegistry ?? createDefaultCapabilityRegistry({ profile: new PostgresProfileRepository(pool), evidence, career: new PostgresCareerRepository(pool), learning: new PostgresLearningRepository(pool) }); const service = options.chatService ?? new ChatService(new PostgresChatStore(pool), new PiChatRuntime({ capabilityRegistry, promptContext: options.promptContext })); const server = createPowuServer({ ...options, catalog: options.catalog ?? new PostgresCatalogRepository(pool), capabilityRegistry, chatService: service, knowledgeStore: options.knowledgeStore ?? new PostgresKnowledgeStore(pool), readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }) }); server.once("close", () => void pool.end()); await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); }); }); return server; }
+export async function startPowuServer(options: Options = {}): Promise<Server> {
+  const pool = createPool();
+  await ensureSchema(pool);
+  const skillRepository = new PostgresSkillRepository(pool);
+  await skillRepository.install(initialSkillDefinitions);
+  const skills = new SharedSkills(skillRepository);
+  const knowledgeStore = options.knowledgeStore ?? new PostgresKnowledgeStore(pool);
+  const learningRepository = new PostgresLearningRepository(pool);
+  const careerRepository = new PostgresCareerRepository(pool);
+  const profileRepository = new PostgresProfileRepository(pool);
+  // A configured model backs generation. Without one the module reports the
+  // dependency as unavailable; the deterministic generator needs an explicit
+  // EVIDENCE_GENERATION=mock opt-in and is never a silent production fallback.
+  const llmExecutor = createDoubaoStructuredExecutor();
+  const evidence = new EvidenceApplication(new PostgresEvidenceRepository(pool), createEvidenceService({
+    ...(llmExecutor ? { llm: createLlmInvoker(llmExecutor) } : {}),
+    ...(!llmExecutor && process.env.EVIDENCE_GENERATION === "mock" ? { generation: new MockEvidenceGeneration() } : {}),
+    ports: createEvidencePorts({
+      learning: learningRepository,
+      career: careerRepository,
+      profile: new ProfileService(profileRepository),
+      skills,
+      knowledge: knowledgeStore,
+    }),
+  }));
+  const capabilityRegistry = options.capabilityRegistry ?? createDefaultCapabilityRegistry({
+    skills, profile: profileRepository, evidence, career: careerRepository, learning: learningRepository,
+  });
+  const service = options.chatService ?? new ChatService(new PostgresChatStore(pool), new PiChatRuntime({ capabilityRegistry, promptContext: options.promptContext }));
+  const server = createPowuServer({ ...options, catalog: options.catalog ?? new PostgresCatalogRepository(pool), capabilityRegistry, chatService: service, knowledgeStore, readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }) });
+  server.once("close", () => void pool.end());
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); });
+  });
+  return server;
+}
 if (process.argv[1] === fileURLToPath(import.meta.url)) startPowuServer().catch(error => { console.error(error); process.exitCode = 1; });
