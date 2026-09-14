@@ -57,6 +57,11 @@ test("learning growth endpoint returns saved draft plan and today's tasks", asyn
   const owner = `anonymous:${createHash("sha256").update(token).digest("hex")}`;
   const saved = await create.execute({ ownerId: owner, requestId: "learning-read-test", operationKey: "learning-save-test" }, { mode: "trial", sourceProfileVersion: 1, startDate: "2026-09-14", endDate: "2026-10-12", weeklyMinutes: 360, learningGoals: ["后端平台工程"], stages: [{ title: "TypeScript 基础", objective: "掌握类型系统", tasks: [{ title: "完成类型练习", description: "完成一组 TypeScript 类型练习", taskType: "practice", estimatedMinutes: 60 }] }] });
   assert.equal(saved.ok, true);
+  const plan = (saved.data as { plan: { id: string; version: number; stages: Array<{ tasks: Array<{ id: string }> }> } }).plan;
+  const feedback = registry.list().find(capability => capability.name === "record_learning_feedback");
+  assert.ok(feedback);
+  const recorded = await feedback.execute({ ownerId: owner, requestId: "learning-feedback-test", operationKey: "learning-feedback-test" }, { planId: plan.id, taskId: plan.stages[0].tasks[0].id, difficulty: "too_hard", note: "第一步不够清晰" });
+  assert.equal(recorded.ok, true);
   const server = createPowuServer({ capabilityRegistry: registry }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
   const response = await fetch(`http://127.0.0.1:${address.port}/api/growth/learning`, { headers: { cookie: `powu_owner=${token}` } });
   assert.equal(response.status, 200);
@@ -64,6 +69,8 @@ test("learning growth endpoint returns saved draft plan and today's tasks", asyn
   assert.equal(body.plan.status, "draft");
   assert.equal(body.plan.stages[0].title, "TypeScript 基础");
   assert.equal(body.tasks.length, 1);
+  assert.equal(body.feedback.length, 1);
+  assert.equal(body.feedback[0].note, "第一步不够清晰");
 });
 
 test("interview growth endpoint returns ended interview history", async t => {
