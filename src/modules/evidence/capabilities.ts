@@ -56,7 +56,7 @@ export function createEvidenceCapabilities(app: EvidenceApplication): Tool[] {
       reviewQuerySchema, (ctx, input) => app.getLearningReviews(ctx,
         "mode" in input && input.mode === "detail" ? { reviewId: input.reviewId } : input)),
 
-    tool("start_interview", "开始一次文字模拟面试。训练范围必须由用户明确给出：岗位、能力标识或本模块项目。已有进行中的会话会复用，除非用户明确要求重新开始。",
+    tool("start_interview", "开始一次文字模拟面试。训练范围必须由用户明确给出：岗位、能力标识、已有项目或手填项目名称与目标。手填背景不自动记录为已完成成果。已有进行中的会话会复用，除非用户明确要求重新开始；出题失败后可按原范围用 startNew 重试。",
       startInterviewSchema, (ctx, input) => app.startInterview(ctx, input)),
 
     tool("get_interview_session", "读取一场模拟面试的当前题目、已答内容和报告状态，用于恢复进行中的训练。",
