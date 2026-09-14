@@ -98,6 +98,6 @@ export class EvidenceApplication {
     if (result.ok && result.changed && result.data?.interview) await this.repository.saveInterview(result.data.interview);
     return result;
   }
-  async getInterviewFeedback(ctx: EvidenceContext, interviewId: string) { const session = await this.getInterviewSession(ctx, interviewId); if (!session.ok || !session.data) return session; return this.service.getInterviewFeedback(ctx, interviewId); }
+  async getInterviewFeedback(ctx: EvidenceContext, interviewId: string) { const session = await this.getInterviewSession(ctx, interviewId); if (!session.ok || !session.data) return session; this.service.hydrateInterview(session.data.interview); return this.service.getInterviewFeedback(ctx, interviewId); }
   async getInterviewRecords(ctx: EvidenceContext) { const sessions = this.repository.listInterviews ? await this.repository.listInterviews(ctx.ownerId) : []; return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取面试历史", data: { items: sessions, session: sessions.find(item => item.status === "active") ?? null } }; }
 }
