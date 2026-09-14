@@ -142,9 +142,8 @@ export class EvidenceApplication {
   /**
    * Public query boundary used by Career's gap analysis; Career never reads
    * Evidence storage. Support values come from stored assessments when they
-   * exist. Without one they fall back to record count only because Career's
-   * gap flow needs a first-pass signal, and `verified` states that the number
-   * is not yet backed by an assessment.
+   * exist. Record counts are factual context, never a substitute for an
+   * assessment. The assessed flag distinguishes missing conclusions.
    */
   async getSkillEvidenceSnapshot(ctx: EvidenceContext, input: { skillCodes: string[] }) {
     const state = await this.loadState(this.repository, ctx.ownerId);
@@ -157,10 +156,7 @@ export class EvidenceApplication {
         .filter(finding => finding.skill.skillId === skillCode);
       const support = findings.some(finding => finding.support === "supported") ? "supported" as const
         : findings.some(finding => finding.support === "partial") ? "partial" as const
-          : findings.length ? "insufficient" as const
-            : matching.length >= 2 ? "supported" as const
-              : matching.length === 1 ? "partial" as const
-                : "insufficient" as const;
+          : "insufficient" as const;
       return {
         skillCode,
         evidenceIds: matching.map(record => record.recordId),

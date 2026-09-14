@@ -203,28 +203,30 @@ function parseJson(text: string): unknown {
  * Normalize only the interview plan envelope; all fields still go through the
  * strict schema below so unsupported content is rejected explicitly. */
 function normalizeInterviewPlan(value: unknown): unknown {
-  let current = value as any;
+  const object = (item: unknown): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item);
+  let current = value;
   for (let i = 0; i < 2 && current && typeof current === "object"; i++) {
-    if (current.result && typeof current.result === "object") current = current.result;
-    else if (current.data && typeof current.data === "object") current = current.data;
+    if (!object(current)) break;
+    if (object(current.result)) current = current.result;
+    else if (object(current.data)) current = current.data;
     else break;
   }
-  if (!current || typeof current !== "object" || !Array.isArray(current.questions)) return current;
+  if (!object(current) || !Array.isArray(current.questions)) return current;
   return {
-    questions: current.questions.map((item: any) => ({
-      category: ({ knowledge: "knowledge", project: "project", expression: "expression", knowledge_understanding: "knowledge", project_explanation: "project", communication: "expression", 知识理解: "knowledge", 项目说明: "project", 表达: "expression" } as Record<string, string>)[String(item.category ?? item.type ?? "expression")] ?? "expression",
+    questions: current.questions.map(item => !object(item) ? item : ({
+      category: ({ knowledge_understanding: "knowledge", project_explanation: "project", communication: "expression", 知识理解: "knowledge", 项目说明: "project", 表达: "expression" } as Record<string, string>)[String(item.category ?? item.type)] ?? item.category ?? item.type,
       prompt: item.prompt ?? item.question ?? item.text,
-      skillIds: Array.isArray(item.skillIds) ? item.skillIds : [],
+      skillIds: item.skillIds ?? [],
     })),
   };
 }
 
 export function createLlmEvidenceGeneration(invoker: LlmInvoker): EvidenceGenerationPort {
-  const run = async <T>(systemPrompt: string, userInput: unknown, schema: z.ZodType<T>, normalizeOutput?: (value: unknown) => unknown): Promise<T> => {
+  const run = async <T>(systemPrompt: string, userInput: unknown, schema: z.ZodType<T>, normalizeOutput?: (value: unknown) => unknown, repair = false): Promise<T> => {
     let raw: unknown;
     try {
       raw = await invoker.generateStructured<unknown>({
-        systemPrompt: `${baseSystem}\n${systemPrompt}`,
+        systemPrompt: `${baseSystem}\n${systemPrompt}\nJSON Schema：${JSON.stringify(z.toJSONSchema(schema))}${repair ? '\n上次输出格式无效。请重新生成，逐项检查必填字段、枚举与数量；不要添加说明。' : ''}`,
         userInput,
         outputSchema: schema,
       });
@@ -234,9 +236,14 @@ export function createLlmEvidenceGeneration(invoker: LlmInvoker): EvidenceGenera
       }
       throw new GenerationError("GENERATION_FAILED", "生成服务暂时不可用", true);
     }
-    const parsed = typeof raw === "string" ? parseJson(raw) : raw;
+    let parsed: unknown;
+    try { parsed = typeof raw === "string" ? parseJson(raw) : raw; }
+    catch (error) { if (!repair) return run(systemPrompt, userInput, schema, normalizeOutput, true); throw error; }
     const result = schema.safeParse(normalizeOutput ? normalizeOutput(parsed) : parsed);
-    if (!result.success) throw new GenerationError("GENERATION_FAILED", "生成结果不符合约定结构", true);
+    if (!result.success) {
+      if (!repair) return run(systemPrompt, userInput, schema, normalizeOutput, true);
+      throw new GenerationError("GENERATION_FAILED", "生成结果不符合约定结构，请重新生成", true);
+    }
     return result.data;
   };
 
@@ -245,7 +252,7 @@ export function createLlmEvidenceGeneration(invoker: LlmInvoker): EvidenceGenera
       const data = await run(
         `请生成 ${input.questionCount} 道${input.difficulty ?? "适中"}难度的面试题，覆盖知识理解、项目说明和表达三类。`,
         { target: input.target, skills: input.skills, requirements: input.requirements, project: input.project, baseline: input.baseline, focus: input.focus },
-        planSchema,
+        planSchema.refine(plan => plan.questions.length === input.questionCount, "题量必须与请求一致"),
         normalizeInterviewPlan,
       );
       if (data.questions.length !== input.questionCount) {

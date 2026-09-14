@@ -192,6 +192,21 @@ test("题目生成失败时保留会话与可恢复提示", async () => {
   assert.equal(started.data!.interview.coverage.complete, false);
 });
 
+test("同一项目多次记录保留本次贡献，岗位不可用时不冒充岗位评估", async () => {
+  const service = serviceWith();
+  const state = emptyState();
+  const first = await service.createRecord(ctx, state, activityInput({ kind: 'project_outcome', project: { title: '知识库', goal: '管理笔记', contribution: '完成导入', contributionPending: false }, skillIds: [KNOWN_SKILL] }));
+  state.records.push(first.data!.record); state.projects.push(first.data!.project!);
+  const next = await service.createRecord(ctx, state, activityInput({ kind: 'project_outcome', project: { projectId: first.data!.project!.projectId, contribution: '完成查询缓存', contributionPending: false } }));
+  assert.equal(next.data!.record.projectId, first.data!.record.projectId);
+  assert.equal(next.data!.record.contribution, '完成查询缓存');
+  const list = await service.queryRecords(ctx, state, { from: '2000-01-01T00:00:00Z', to: '2001-01-01T00:00:00Z' });
+  assert.ok(list.data && 'projects' in list.data);
+  assert.equal(list.data.projects[0].title, '知识库', '项目目录不被时间线范围截掉');
+  const assessment = await service.assessEvidence(ctx, state, { evidenceIds: [first.data!.record.recordId], skillIds: [KNOWN_SKILL], criteria: { kind: 'job', jobId: 'missing' } });
+  assert.equal(assessment.error?.code, 'DEPENDENCY_UNAVAILABLE');
+});
+
 test("答完全部题目会生成整场报告，提前结束同样生成报告", async () => {
   const service = serviceWith();
   const state = emptyState();

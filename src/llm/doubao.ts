@@ -1,5 +1,13 @@
 import { createDoubaoModels } from "../agent/runtime/provider.ts";
 import type { StructuredLlmExecutor } from "./invoker.ts";
+import { z } from "zod";
+
+/** Serialize the contract into the provider request; a Zod object alone is not
+ * visible to the model. Keep validation in the calling domain as well. */
+export function structuredSystemPrompt(prompt: string, schema: unknown): string {
+  const jsonSchema = schema instanceof z.ZodType ? z.toJSONSchema(schema) : schema;
+  return `${prompt}\n输出必须严格符合以下 JSON Schema（不要添加额外字段）：\n${JSON.stringify(jsonSchema)}`;
+}
 
 /**
  * Structured JSON executor backed by the same Doubao/Ark model the chat runtime
@@ -20,19 +28,24 @@ export function createDoubaoStructuredExecutor(config: {
   if (!model) return null;
   return async input => {
     input.signal?.throwIfAborted();
+    const signal = AbortSignal.any([AbortSignal.timeout(90_000), ...(input.signal ? [input.signal] : [])]);
     const response = await models.completeSimple(model, {
-      systemPrompt: input.systemPrompt,
+      systemPrompt: structuredSystemPrompt(input.systemPrompt, input.outputSchema),
       messages: [{
         role: "user",
         content: [{ type: "text" as const, text: JSON.stringify(input.userInput) }],
         timestamp: Date.now(),
       }],
-    }, { reasoning: "low", maxRetries: 1, maxRetryDelayMs: 3000, signal: input.signal });
+    }, { reasoning: "low", maxRetries: 1, maxRetryDelayMs: 3000, signal });
+    if (response.stopReason === 'error' || response.stopReason === 'aborted' || response.stopReason === 'length') {
+      throw new Error('structured response did not complete');
+    }
     const text = response.content
       .flatMap(part => part.type === "text" ? [part.text] : [])
       .join("")
       .trim();
     if (!text) throw new Error("empty structured response");
-    return JSON.parse(text.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()) as unknown;
+    // Domain adapter owns JSON parsing and bounded format-repair retries.
+    return text;
   };
 }

@@ -261,7 +261,8 @@ type InterviewTarget =
   | { kind: "skills"; skillIds: ExternalId[]; projectId?: EntityId; project?: InlineProject }
   | { kind: "project"; projectId?: EntityId; project?: InlineProject; skillIds?: ExternalId[] };
 
-`InlineProject` 为 `{title, goal, contribution?}`。项目训练必须提供 `projectId` 或 `project` 其中一个；岗位与项目训练没有结构化能力标识时仍可进行通用文字训练，专项能力模式仍要求至少一个 `skillId`。
+type InlineProject = { title: string; goal: string; contribution?: string };
+// projectId 与 project 互斥；project 模式必须有一项，skills 模式必须有能力标识。
 type QuestionDTO = {
   questionId: EntityId;
   ordinal: number;
@@ -315,7 +316,7 @@ difficulty 只在 preparing 或 preparation_failed 且尚未确定难度时允�
 | 工具 → 应用方法 | 输入 payload | 返回 data |
 | --- | --- | --- |
 | `get_learning_records` → getLearningRecords | `{mode:"detail", recordId}` 或 `{mode:"list", from?, to?, kinds?, taskId?, skillId?, limit?, cursor?}`；from/to 必须同时出现 | detail：`{record:RecordDTO, coverage}`；list：`{page:Page<RecordDTO>, range, coverage}` |
-| `record_learning_evidence` → recordLearningEvidence | `{kind:"activity"\|"project_outcome", title, content, occurredAt, durationMinutes?, taskId?, skillIds?, materialRefs?, project?}`；project 为 `{projectId}` 或 `{title, goal, contribution?, contributionPending}` | `{record, evidenceId, pendingAssociations[], missingInformation[]}` |
+| `record_learning_evidence` → recordLearningEvidence | `{kind:"activity"\|"project_outcome", title, content, occurredAt, durationMinutes?, taskId?, skillIds?, materialRefs?, project?}`；project 为 `{projectId, contribution?, contributionPending?}` 或 `{title, goal, contribution?, contributionPending}` | `{record, evidenceId, pendingAssociations[], missingInformation[]}` |
 | `update_learning_evidence` → updateLearningEvidence | `{recordId, action:"amend", changes:{title?,content?,occurredAt?,durationMinutes?,materialRefs?,skillIds?,taskId?,contribution?}}` 或 `{recordId, action:"withdraw", reason}`；amend 至少一项变更 | `{record, invalidatedAssessmentIds[], affectedReviewIds[]}` |
 | `evaluate_learning_evidence` → evaluateLearningEvidence | `{evidenceIds, skillIds, criteria?:{kind:"job",jobId}\|{kind:"task",taskId}, focus?}`；两组 ID 均非空 | `{assessment:AssessmentDTO, recovery?}` |
 | `get_skill_evidence` → getSkillEvidence | `{skillIds?, from?, to?, sources?, limit?, cursor?}`；指定 ID 不存在时说明无证据或能力标识无效 | `{page:Page<SkillCardDTO>, coverage}` |
@@ -334,7 +335,7 @@ difficulty 只在 preparing 或 preparation_failed 且尚未确定难度时允�
 - `InterviewSummary`：interviewId、target、difficulty、status、answeredCount、totalQuestions、createdAt、endedAt、reportStatus、已有 summary。
 - `recovery`：`{toolName, entityId, action, retryable}`。action 为用户可理解的说明，不包含密钥、内部错误栈或可执行代码。
 - amend 的 materialRefs、skillIds 为明确替换；空数组表示清空。durationMinutes、taskId 在 changes 中可为 null 表示清空，省略表示不变。创建时 durationMinutes 省略保存 null。
-- 首版 project_outcome 必须提供 project；关联已有项目时读取其贡献背景，本次 content 仍应说明本次产出。不清楚贡献时返回 missingInformation，不能评为个人已验证成果。
+- 首版 project_outcome 必须提供 project；关联已有项目时提交本次 contribution，未提供则标记贡献待补，不沿用历史成果冒充本次贡献；本次 content 仍应说明本次产出。不清楚贡献时返回 missingInformation，不能评为个人已验证成果。
 - InterviewTarget 的 skills 模式要求 skillIds 非空；project 模式可使用可访问的本模块项目，也可直接提交本场手填的项目资料。明确的“JavaScript”等自然语言能力先由共享能力查询解析为标识；解析能力未接入时返回所需信息，不能随机生成 skillId。岗位或项目缺少结构化能力标识时允许进行通用文字训练，并在范围中保留资料覆盖说明。
 - expectedVersion 在修改已有记录时必需：页面通过命令元信息回传其实际读到的版本，Agent 适配层使用本轮已读取对象的版本。它是前置条件，不是模型可以自称的新版本；宿主也不能在写入前临时读取最新版来掩盖用户基于旧内容进行编辑的冲突。面试回答以当前题及唯一约束判并发，避免反馈写入导致无关版本冲突。
 - 首版已撤回记录不支持原地恢复，用户需要重新记录时形成新对象并引用旧记录；后续若增加恢复操作，需要单独定义失效评估如何处理。
@@ -677,3 +678,15 @@ Agent Tool ────────┘
 - 导出与趋势分析使用已保存报告，不因查询历史自动重新打分。
 - 后台任务执行可替换请求内执行器，继续使用 operation 及 fencing_token，不改变 13 个工具的基本语义。
 - 阶段测试不因扩展转移归属；任务调整和岗位匹配仍通过相应模块能力实现。
+
+
+### 2026-09-15 交互与生成契约补充
+
+- `get_learning_records` 列表额外返回 `projects: {projectId,title,goal}[]`，按 owner 隔离，独立于本页时间线筛选；项目名称不再从某次成果标题推测。
+- `InterviewDTO.targetSnapshot` 增加可选 `title` 与 `project:{title,goal,contribution}|null`；旧会话兼容缺省。恢复展示采用本场快照，岗位更新不改历史范围。
+- 岗位/项目缺结构化能力仍可文字训练；coverage 明示缺口，不生成未经支持的能力等级。未说明个人贡献的项目背景不能作为个人成果。
+- 岗位只作为用户可选评估标准，沿用 `criteria:{kind:"job",jobId}`，不更改 Career 目标；岗位不可用返回依赖错误，不静默改成一般标准。
+- 生成适配器将 Zod 转为可读 JSON Schema 发送到模型；格式或题量错误最多重新生成一次，未知类别和非法技能仍拒绝。确定性生成仅用于本地预览或测试。
+- SSE `tool_end` 对 Evidence 写工具附加可选 `entity_id`；业务 `ok:false` 映射为错误，不自动导航。页面按返回的面试 ID 读取同一场会话。
+- 失败后“重新生成题目”通过 start_interview(startNew:true) 创建新尝试，旧失败会话保留供查询；“再练一场”沿用所查看会话的 target、difficulty、focus、totalQuestions。报告失败使用原场 finish_interview 重试。
+- 页面动作直接调用公开 HTTP 能力；前端只维护展示/请求状态，生成与资料权限检查在后端。
