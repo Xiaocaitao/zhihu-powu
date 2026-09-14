@@ -19,6 +19,9 @@
     @media(max-width:900px){.app{grid-template-columns:76px minmax(0,1fr)}.sidebar{padding:20px 11px}.brand{justify-content:center;padding:0 0 24px}.brand-copy,.nav-label,.sidebar-foot,.nav-group summary::after,.history,.new-chat{display:none}.nav button,.nav summary{justify-content:center;padding:10px}.nav-group-items{margin:3px 0;padding:0;border:0}.page{padding-top:36px}.page-head{align-items:flex-start}.page h1{font-size:36px}}
     @media(max-width:620px){.app{grid-template-columns:1fr;grid-template-rows:62px minmax(0,1fr)}.sidebar{display:block;padding:10px 12px;border:0;border-bottom:1px solid var(--line);overflow-x:auto}.brand,.nav-group summary,.sidebar-foot,.new-chat,.history{display:none}.nav{display:flex;overflow:visible;border:0;padding:0}.nav-group{display:contents}.nav-group-items{display:flex;margin:0;padding:0;border:0}.nav button{width:auto;min-width:42px;white-space:nowrap}.nav-label{display:none}.workspace{grid-row:2;grid-template-rows:60px minmax(0,1fr)}.topbar{padding:0 18px}.crumb span:last-child{display:none}.page{padding:28px 16px 42px}.page-head{display:block}.page-head .primary{margin-top:20px}.page h1{font-size:32px}.page-intro{font-size:14px}.composer-foot>span{display:none}.empty-stage{min-height:320px}.account-name{display:none}.chat-page-inner{min-height:calc(100vh - 140px)}.chat-page-head h1{font-size:24px}}
     .growth-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.growth-card{padding:22px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:0 10px 30px #25487808}.growth-card.wide{grid-column:1/-1}.growth-card h2{margin:0;font-size:18px}.growth-card p{color:var(--muted);font-size:13px;line-height:1.7}.growth-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0 0}.growth-card dt{color:var(--muted);font-size:12px}.growth-card dd{margin:5px 0 0;color:var(--ink);font-weight:700}.growth-list{display:grid;gap:10px;margin-top:16px}.growth-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 14px;border:1px solid #eef2f7;border-radius:10px}.growth-row strong{font-size:13px}.growth-row span{color:var(--muted);font-size:12px}.growth-badge{padding:5px 8px;border-radius:7px;color:var(--blue);background:#edf5ff;font-size:11px;font-weight:700}.growth-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.growth-form label{display:grid;gap:6px;color:var(--muted);font-size:12px}.growth-form .full{grid-column:1/-1}.growth-form input,.growth-form textarea,.growth-form select{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:9px;outline:0;color:var(--ink);background:#fff}.growth-form textarea{min-height:88px;resize:vertical}.growth-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:15px}.growth-progress{height:9px;margin-top:12px;overflow:hidden;border-radius:99px;background:#e9f0f8}.growth-progress i{display:block;width:0;height:100%;border-radius:inherit;background:var(--blue);transition:width .2s}.growth-muted{color:var(--muted);font-size:12px}.growth-timeline{border-left:2px solid #dfe9f6;margin:16px 0 0 7px}.growth-timeline article{position:relative;padding:0 0 18px 18px}.growth-timeline article:before{content:"";position:absolute;left:-6px;top:3px;width:9px;height:9px;border-radius:50%;background:var(--blue)}.growth-timeline h3{margin:0;font-size:13px}.growth-timeline p{margin:5px 0 0}.growth-action{padding:0;border:0;color:var(--blue);background:transparent;font-weight:700;cursor:pointer}@media(max-width:780px){.growth-grid,.growth-form{grid-template-columns:1fr}.growth-card.wide,.growth-form .full{grid-column:auto}.growth-card dl{grid-template-columns:1fr}}
+    /* Preserve conditional fields and busy states within the two owned pages. */
+    [data-page="record"] [hidden], [data-page="interview"] [hidden]{display:none!important}
+    [data-page="record"] button:disabled, [data-page="interview"] button:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
   </style>
 </head>
 <body>
@@ -91,9 +94,13 @@
 
         <section class="page" data-page="profile" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">PERSONAL PROFILE</p><h1>画像与职业规划</h1><p class="page-intro">成员 A Profile：先记录用户明确提供的事实，再由 Agent 调用 Profile 工具读写。</p></div><span class="growth-badge" id="profile-percent">由 Agent 返回画像状态</span></header><div class="growth-grid"><article class="growth-card wide"><h2>个人画像</h2><p id="profile-status">表单只采集用户输入，所有读取和写入均由 Agent 调用 Profile 工具完成。</p><form id="profile-form" class="growth-form"><label>学校<input name="school" data-profile-field></label><label>专业<input name="major" data-profile-field></label><label>年级<input name="grade" data-profile-field></label><label>每周可投入时间（小时）<input name="weekly_time" type="number" min="0" data-profile-field></label><label class="full">感兴趣的方向<input name="interest_direction" data-profile-field placeholder="用逗号分隔"></label><label class="full">已学习内容<textarea name="learned_content" data-profile-field></textarea></label><label class="full">当前基础<textarea name="current_baseline" data-profile-field></textarea></label><label class="full">目标方向<input name="target_direction" data-profile-field></label><label class="full">学习偏好<input name="learning_preference" data-profile-field placeholder="用逗号分隔"></label><div class="growth-actions full"><button class="primary" type="submit">交给 Agent 保存</button></div></form></article><article class="growth-card"><h2>画像完善度</h2><p id="profile-missing" class="growth-muted">请让 Agent 读取画像后返回完善度和待补充字段。</p><button class="growth-action" type="button" data-profile-action="read">让 Agent 读取当前画像</button></article><article class="growth-card"><h2>职业规划入口</h2><p>画像保存后，可在目标岗位页保存 JD，再由 Career 工具按证据生成差距分析。</p><button class="growth-action" type="button" data-view="jobs">前往目标岗位 →</button></article></div></div></section>
         <section class="page" data-page="jobs" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">JOB MATCH</p><h1>目标岗位</h1><p class="page-intro">成员 B Career：由 Career Application 返回规划、岗位、企业、趋势、证据差距和推荐行动。</p></div><span class="growth-badge" id="career-load-status">加载中</span></header><div class="growth-grid"><article class="growth-card wide"><h2>保存岗位 JD</h2><form id="job-form" class="growth-form"><label>岗位标题<input name="title" required></label><label>公司<input name="companyName"></label><label>方向编码<input name="directionCode"></label><label>城市<input name="city"></label><label class="full">岗位要求能力（用逗号分隔）<input name="requirementSkills" placeholder="例如：TypeScript, PostgreSQL"></label><label class="full">原始 JD<textarea name="description" minlength="20" required></textarea></label><div class="growth-actions full"><button class="primary" type="submit">保存岗位</button></div></form><h2>已保存岗位</h2><div id="job-list" class="growth-list"><p class="growth-muted">正在读取已保存岗位。</p></div><h2>岗位目录</h2><div id="job-catalog" class="growth-list"><p class="growth-muted">正在读取岗位目录。</p></div><aside id="job-detail" class="growth-card" hidden><h2 id="job-detail-title">岗位详情</h2><p id="job-detail-meta" class="growth-muted"></p><p id="job-detail-description" style="white-space:pre-wrap"></p><button type="button" class="growth-action" id="job-detail-close">关闭详情</button></aside></article><article class="growth-card"><h2>当前职业规划</h2><div class="growth-list"><div class="growth-row"><strong>规划状态</strong><span id="career-plan-status" class="growth-muted">暂无</span></div><div class="growth-row"><strong>版本</strong><span id="career-plan-version" class="growth-muted">—</span></div><div class="growth-row"><strong>目标岗位</strong><span id="selected-job" class="growth-muted">尚未选择</span></div><div class="growth-row"><strong>目标企业</strong><span id="selected-company" class="growth-muted">尚未选择</span></div><div class="growth-actions"><button class="growth-action" id="create-plan" type="button">创建草稿</button><button class="growth-action" id="confirm-plan" type="button">确认规划</button></div></div><h2>企业目录</h2><div id="company-list" class="growth-list"><p class="growth-muted">正在读取企业目录。</p></div><p id="company-comparison" class="growth-muted">选择两家企业后可进行对比。</p></article><article class="growth-card"><h2>差距分析</h2><p id="gap-summary" class="growth-muted">暂无最新分析。</p><div id="gap-groups" class="growth-list"></div><h3>推荐行动</h3><div id="career-actions" class="growth-list"></div><button class="growth-action" type="button" data-career-action="analyze">发起分析</button></article><article class="growth-card"><h2>行业趋势</h2><p id="career-trends-status" class="growth-muted">正在读取行业趋势。</p><div id="career-trends" class="growth-list"></div></article></div></div></section>
-        <section class="page" data-page="interview" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">AI MOCK INTERVIEW</p><h1>模拟面试</h1><p class="page-intro">在本页完成训练：选择范围、逐题作答、查看反馈与整场报告，不需要离开页面。</p></div><span class="growth-badge" id="interview-status">正在读取</span></header><div class="growth-grid"><article class="growth-card wide"><h2>训练范围</h2><form id="interview-start-form" class="growth-form"><label>训练类型<select id="interview-target-kind"><option value="job">目标岗位</option><option value="skills">专项能力</option><option value="project">我的项目</option></select></label><label id="interview-job-field">目标岗位<select id="interview-target-job"></select></label><label id="interview-skill-field" hidden>专项能力<select id="interview-target-skill"></select></label><label id="interview-project-field" hidden>项目<select id="interview-target-project"></select></label><label>题量<input id="interview-count" type="number" min="1" max="20" value="5"></label><label class="full">重点（可选）<input id="interview-focus" placeholder="例如：项目细节、技术选型理由"></label><div class="growth-actions full"><button class="primary" type="submit">开始文字训练</button><button class="growth-action" type="button" data-interview-resume>继续未完成的面试</button></div></form><p class="growth-muted" id="interview-scope-hint">岗位来自职业规划的岗位列表，能力来自共享能力目录；没有依据时请先补充，不会替你假设目标。</p></article><article class="growth-card wide"><h2 id="interview-question-title">尚未开始面试</h2><p id="interview-question">选择训练范围后开始；不会把未提交的输入当作回答。</p><p class="growth-muted" id="interview-scope-summary"></p><form id="interview-answer-form" class="growth-form"><label class="full">回答<textarea id="interview-answer" required></textarea></label><div class="growth-actions full"><button class="primary" type="submit">提交回答</button><button class="growth-action" type="button" data-interview-finish>提前结束</button><button class="growth-action" type="button" data-interview-again>按同样范围再练一场</button></div></form><div id="interview-feedback" class="growth-list"></div></article><article class="growth-card"><h2>整场报告</h2><div id="interview-report" class="growth-list"><p class="growth-muted">结束一场面试后在这里显示报告与局限。</p></div></article><article class="growth-card"><h2>本次进度</h2><div id="interview-progress" class="growth-list"><p class="growth-muted">开始后可看到逐题进度。</p></div></article><article class="growth-card wide"><h2>历史面试</h2><div id="interview-history" class="growth-list"><p class="growth-muted">正在读取历史记录。</p></div></article></div></div></section>
+        <section class="page" data-page="interview" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">AI MOCK INTERVIEW</p><h1>模拟面试</h1><p class="page-intro">在本页完成训练：选择范围、逐题作答、查看反馈与整场报告，不需要离开页面。</p></div><span class="growth-badge" id="interview-status">正在读取</span></header><div class="growth-grid"><article class="growth-card wide"><h2>训练范围</h2><form id="interview-start-form" class="growth-form"><label>训练类型<select id="interview-target-kind"><option value="job">目标岗位</option><option value="skills">专项能力</option><option value="project">我的项目</option></select></label><label id="interview-job-field">目标岗位<select id="interview-target-job"></select></label><label id="interview-skill-field" hidden>专项能力<select id="interview-target-skill"></select></label><label id="interview-project-field" hidden>项目<select id="interview-target-project"></select></label>
+          <label id="interview-target-project-title-field" hidden>项目名称<input id="interview-target-project-title" maxlength="200"></label>
+          <label id="interview-target-project-goal-field" hidden>项目目标<textarea id="interview-target-project-goal" maxlength="2000"></textarea></label>
+          <label id="interview-target-project-contribution-field" hidden>本人贡献（可选）<textarea id="interview-target-project-contribution" maxlength="2000"></textarea></label><label>题量<input id="interview-count" type="number" min="1" max="20" value="5"></label><label class="full">重点（可选）<input id="interview-focus" placeholder="例如：项目细节、技术选型理由"></label><div class="growth-actions full"><button class="primary" type="submit">开始文字训练</button><button class="growth-action" type="button" data-interview-resume>继续未完成的面试</button></div></form><p class="growth-muted" id="interview-scope-hint">岗位来自职业规划的岗位列表，能力来自共享能力目录；没有依据时请先补充，不会替你假设目标。</p></article><article class="growth-card wide"><h2 id="interview-question-title">尚未开始面试</h2><p id="interview-question">选择训练范围后开始；不会把未提交的输入当作回答。</p><p class="growth-muted" id="interview-scope-summary"></p><form id="interview-answer-form" class="growth-form"><label class="full">回答<textarea id="interview-answer" required></textarea></label><div class="growth-actions full"><button class="primary" type="submit">提交回答</button><button class="growth-action" type="button" data-interview-finish>提前结束</button><button class="growth-action" type="button" data-interview-again>按同样范围再练一场</button></div></form><div id="interview-feedback" class="growth-list"></div></article><article class="growth-card"><h2>整场报告</h2><div id="interview-report" class="growth-list"><p class="growth-muted">结束一场面试后在这里显示报告与局限。</p></div></article><article class="growth-card"><h2>本次进度</h2><div id="interview-progress" class="growth-list"><p class="growth-muted">开始后可看到逐题进度。</p></div></article><article class="growth-card wide"><h2>历史面试</h2><div id="interview-history" class="growth-list"><p class="growth-muted">正在读取历史记录。</p></div></article></div></div></section>
         <section class="page" data-page="learning" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">LEARNING PLAN</p><h1>学习计划</h1><p class="page-intro">成员 C Learning Plan：计划、阶段和任务由 Agent 生成并由 Learning 服务返回。</p></div><span class="growth-badge" id="learning-status">正在读取</span><span class="growth-muted" id="learning-drafts"></span></header><div class="growth-grid"><article class="growth-card wide"><h2>阶段路线</h2><div id="learning-stages" class="growth-list"><p class="growth-muted">正在读取计划数据。</p></div></article><article class="growth-card"><h2>今日任务</h2><div id="learning-tasks" class="growth-list"><p class="growth-muted">正在读取任务。</p></div><button class="growth-action" type="button" data-learning-action="refresh">让 Agent 读取当前计划</button></article><article class="growth-card"><h2>计划反馈</h2><div id="learning-feedback" class="growth-list"><p class="growth-muted">正在读取反馈。</p></div><button class="growth-action" type="button" data-learning-action="feedback">向 Agent 记录反馈</button></article></div></div></section>
-        <section class="page" data-page="record" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">LEARNING RECORD</p><h1>学习记录</h1><p class="page-intro">时间线只展示已保存事实、成果与评估状态；记录、修正、评估与复盘都在本页完成。</p></div><span class="growth-badge" id="record-count">正在读取</span></header><div class="growth-grid"><article class="growth-card wide"><h2>记录一次学习</h2><form id="record-form" class="growth-form"><label>类型<select id="record-kind"><option value="activity">学习活动</option><option value="project_outcome">项目成果</option></select></label><label>发生时间<input id="record-occurred" type="datetime-local"></label><label>实际用时（分钟，可留空）<input id="record-duration" type="number" min="0"></label><label>关联能力<select id="record-skill"></select></label><label class="full">标题<input id="record-title" required></label><label class="full">内容<textarea id="record-content" required placeholder="完成了什么、卡在哪里、结果如何"></textarea></label><label id="record-project-title-field" hidden>项目名称<input id="record-project-title"></label><label id="record-project-goal-field" hidden>项目目标<input id="record-project-goal"></label><label class="full" id="record-project-contribution-field" hidden>本人贡献<textarea id="record-project-contribution" placeholder="说明本人做了什么；不确定就勾选下面的待补充"></textarea></label><label class="full" id="record-project-pending-field" hidden>本人贡献待补充<input id="record-project-pending" type="checkbox"></label><label>关联材料<select id="record-materials"></select></label><div class="growth-actions full"><button class="primary" type="submit">保存记录</button></div></form><p class="growth-muted" id="record-form-hint">只保存真实发生过的学习事实；实际用时未知就留空，不会用预计用时替代。</p></article><article class="growth-card wide"><h2>学习时间线</h2><form id="record-filter-form" class="growth-form"><label>时间范围<select id="record-range"><option value="week">本周</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option></select></label><label>类型<select id="record-kind-filter"><option value="">全部类型</option><option value="activity">学习活动</option><option value="project_outcome">项目成果</option><option value="task_change">任务变化</option><option value="learning_feedback">学习反馈</option><option value="plan_adjustment">计划调整</option></select></label><label>能力<select id="record-skill-filter"><option value="">全部能力</option></select></label><div class="growth-actions full"><button class="primary" type="submit">应用筛选</button></div></form><div id="record-list" class="growth-timeline" aria-live="polite"><p class="growth-muted">正在读取学习记录。</p></div><p class="growth-muted" id="record-coverage"></p></article><article class="growth-card"><h2>单条记录</h2><div id="record-detail" class="growth-list"><p class="growth-muted">点击时间线中的记录查看详情、修正、撤回或评估。</p></div></article><article class="growth-card"><h2>能力证据</h2><div id="record-skills" class="growth-list"><p class="growth-muted">评估后会在这里显示依据与有效性。</p></div><button class="growth-action" type="button" data-record-skills>刷新能力证据</button></article><article class="growth-card"><h2>阶段复盘</h2><form id="review-form" class="growth-form"><label>复盘范围<select id="review-range"><option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="week">本周</option></select></label><div class="growth-actions full"><button class="primary" type="submit">生成复盘</button></div></form><div id="review-list" class="growth-list"><p class="growth-muted">还没有复盘。</p></div></article></div></div></section>
+        <section class="page" data-page="record" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">LEARNING RECORD</p><h1>学习记录</h1><p class="page-intro">时间线只展示已保存事实、成果与评估状态；记录、修正、评估与复盘都在本页完成。</p></div><span class="growth-badge" id="record-count">正在读取</span></header><div class="growth-grid"><article class="growth-card wide"><h2>记录一次学习</h2><form id="record-form" class="growth-form"><label>类型<select id="record-kind"><option value="activity">学习活动</option><option value="project_outcome">项目成果</option></select></label><label>发生时间<input id="record-occurred" type="datetime-local"></label><label>实际用时（分钟，可留空）<input id="record-duration" type="number" min="0"></label><label>关联能力<select id="record-skill"></select></label><label class="full">标题<input id="record-title" required></label><label class="full">内容<textarea id="record-content" required placeholder="完成了什么、卡在哪里、结果如何"></textarea></label><label>关联项目<select id="record-project-source"><option value="none">不关联项目</option><option value="existing">选择已有项目</option><option value="manual">手动填写项目</option></select></label>
+          <label id="record-project-existing-field" hidden>已有项目<select id="record-project-existing"></select></label><label id="record-project-title-field" hidden>项目名称<input id="record-project-title"></label><label id="record-project-goal-field" hidden>项目目标<input id="record-project-goal"></label><label class="full" id="record-project-contribution-field" hidden>本人贡献<textarea id="record-project-contribution" placeholder="说明本人做了什么；不确定就勾选下面的待补充"></textarea></label><label class="full" id="record-project-pending-field" hidden>本人贡献待补充<input id="record-project-pending" type="checkbox"></label><label>关联材料<select id="record-materials"></select></label><div class="growth-actions full"><button class="primary" type="submit">保存记录</button></div></form><p class="growth-muted" id="record-form-hint">只保存真实发生过的学习事实；实际用时未知就留空，不会用预计用时替代。</p></article><article class="growth-card wide"><h2>学习时间线</h2><form id="record-filter-form" class="growth-form"><label>时间范围<select id="record-range"><option value="week">本周</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option></select></label><label>类型<select id="record-kind-filter"><option value="">全部类型</option><option value="activity">学习活动</option><option value="project_outcome">项目成果</option><option value="task_change">任务变化</option><option value="learning_feedback">学习反馈</option><option value="plan_adjustment">计划调整</option></select></label><label>能力<select id="record-skill-filter"><option value="">全部能力</option></select></label><div class="growth-actions full"><button class="primary" type="submit">应用筛选</button></div></form><div id="record-list" class="growth-timeline" aria-live="polite"><p class="growth-muted">正在读取学习记录。</p></div><p class="growth-muted" id="record-coverage"></p></article><article class="growth-card"><h2>单条记录</h2><div id="record-detail" class="growth-list"><p class="growth-muted">点击时间线中的记录查看详情、修正、撤回或评估。</p></div></article><article class="growth-card"><h2>能力证据</h2><div id="record-skills" class="growth-list"><p class="growth-muted">评估后会在这里显示依据与有效性。</p></div><button class="growth-action" type="button" data-record-skills>刷新能力证据</button></article><article class="growth-card"><h2>阶段复盘</h2><form id="review-form" class="growth-form"><label>复盘范围<select id="review-range"><option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="week">本周</option></select></label><div class="growth-actions full"><button class="primary" type="submit">生成复盘</button></div></form><div id="review-list" class="growth-list"><p class="growth-muted">还没有复盘。</p></div></article></div></div></section>
         <section class="page" data-page="knowledge" hidden><div class="page-inner"><header class="page-head"><div><p class="eyebrow">MY KNOWLEDGE BASE</p><h1>知识库</h1><p class="page-intro">上传资料后，提问时可以直接附带使用。</p></div><label class="primary">上传资料<input id="knowledge-files" type="file" multiple hidden></label></header><div class="empty-stage knowledge-card"><div id="knowledge-list" class="knowledge-list"></div></div></div></section>
       </div>
     </main>
@@ -199,14 +206,22 @@
       const option = (value, label) => { const item = document.createElement('option'); item.value = value; item.textContent = label; return item; };
       const fill = (select, items, placeholder) => {
         if (!select) return;
+        const selected = select.value;
         select.replaceChildren();
         if (placeholder) select.append(option('', placeholder));
         for (const item of items) select.append(option(item.value, item.label));
+        if (items.some(item => item.value === selected)) select.value = selected;
       };
+      const pendingWrites = new Map();
       async function json(path, options = {}) {
-        const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', ...(options.headers || {}) } });
+        const write = options.method && options.method !== 'GET';
+        const signature = JSON.stringify([path, options.method, options.body, options.headers]);
+        if (write && !pendingWrites.has(signature)) pendingWrites.set(signature, crypto.randomUUID());
+        const operationHeaders = write ? { 'Idempotency-Key': pendingWrites.get(signature) } : {};
+        const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', ...operationHeaders, ...(options.headers || {}) } });
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload?.error?.message || payload?.summary || payload?.error || `请求失败（${response.status}）`);
+        if (!response.ok || payload.ok === false) throw new Error(payload?.error?.message || payload?.summary || payload?.error || `请求失败（${response.status}）`);
+        if (write) pendingWrites.delete(signature);
         return payload.data ?? payload;
       }
 
@@ -215,17 +230,28 @@
       async function loadSkillCatalog() {
         if (skillCatalog) return skillCatalog;
         try { const data = await json('/api/skills?limit=100'); skillCatalog = data.items || []; }
-        catch { skillCatalog = []; }
+        catch { return []; }
         return skillCatalog;
       }
 
       /* ------------------------------- 模拟面试 ------------------------------- */
-      const interview = { session: null, target: null, count: 5, focus: '', ready: false };
+      const interview = { session: null, target: null, count: null, focus: '', busy: false };
+      function syncInterviewProjectFields() {
+        const kind = document.querySelector('#interview-target-kind').value;
+        const manual = kind === 'project' && document.querySelector('#interview-target-project').value === '__manual__';
+        document.querySelector('#interview-job-field').hidden = kind !== 'job';
+        document.querySelector('#interview-skill-field').hidden = kind !== 'skills';
+        document.querySelector('#interview-project-field').hidden = kind !== 'project';
+        for (const id of ['title', 'goal', 'contribution']) {
+          document.querySelector(`#interview-target-project-${id}-field`).hidden = !manual;
+        }
+      }
       async function prepareInterviewTargets() {
-        if (interview.ready) return;
+
         const jobSelect = document.querySelector('#interview-target-job');
         const skillSelect = document.querySelector('#interview-target-skill');
         const projectSelect = document.querySelector('#interview-target-project');
+
         try {
           const jobs = await json('/api/career/jobs?limit=50');
           fill(jobSelect, (jobs.items || []).map(job => ({ value: job.id, label: job.companyName ? `${job.title} · ${job.companyName}` : job.title })), '请选择目标岗位');
@@ -233,46 +259,61 @@
         fill(skillSelect, (await loadSkillCatalog()).map(skill => ({ value: skill.skillId, label: `${skill.name}（${skill.skillId}）` })), '请选择专项能力');
         try {
           const records = await json('/api/evidence/records?limit=50');
-          const projects = new Map();
-          for (const record of (records.page?.items || [])) if (record.projectId) projects.set(record.projectId, record.title);
-          fill(projectSelect, [...projects].map(([id, title]) => ({ value: id, label: `${title}（${id}）` })), '请选择项目');
-        } catch { fill(projectSelect, [], '项目读取失败'); }
-        const kindSelect = document.querySelector('#interview-target-kind');
-        const syncKind = () => {
-          const kind = kindSelect.value;
-          document.querySelector('#interview-job-field').hidden = kind !== 'job';
-          document.querySelector('#interview-skill-field').hidden = kind !== 'skills';
-          document.querySelector('#interview-project-field').hidden = kind !== 'project';
-        };
-        kindSelect.addEventListener('change', syncKind); syncKind();
-        interview.ready = true;
+          fill(projectSelect, (records.projects || []).map(project => ({ value: project.projectId, label: project.title })).concat([{ value: '__manual__', label: '手动填写项目' }]), '请选择项目');
+        } catch { fill(projectSelect, [{ value: '__manual__', label: '手动填写项目' }], '项目列表读取失败，也可以手动填写'); }
+        syncInterviewProjectFields();
       }
       function selectedTarget() {
         const kind = document.querySelector('#interview-target-kind').value;
         if (kind === 'job') { const id = document.querySelector('#interview-target-job').value; return id ? { kind, jobId: id } : null; }
         if (kind === 'skills') { const id = document.querySelector('#interview-target-skill').value; return id ? { kind, skillIds: [id] } : null; }
         const id = document.querySelector('#interview-target-project').value;
-        return id ? { kind, projectId: id } : null;
+        if (!id) return null;
+        if (id === '__manual__') {
+          const title = document.querySelector('#interview-target-project-title').value.trim();
+          const goal = document.querySelector('#interview-target-project-goal').value.trim();
+          const contribution = document.querySelector('#interview-target-project-contribution').value.trim();
+          if (!title || !goal) return null;
+          return { kind, project: { title, goal, ...(contribution ? { contribution } : {}) } };
+        }
+        return { kind, projectId: id };
       }
       async function startInterview(options = {}) {
         const hint = document.querySelector('#interview-scope-hint');
-        const target = options.reuse && interview.target ? interview.target : selectedTarget();
+        if (interview.busy) return;
+        const target = options.reuse ? interview.target : selectedTarget();
         if (!target) { hint.textContent = '请先选择训练范围；没有依据时不会替你假设目标岗位。'; return; }
-        const count = options.reuse ? interview.count : (Number(document.querySelector('#interview-count').value) || 5);
+        const count = options.reuse ? interview.count : Number(document.querySelector('#interview-count').value);
         const focus = options.reuse ? interview.focus : document.querySelector('#interview-focus').value.trim();
-        hint.textContent = '正在开始训练…';
+        hint.textContent = '正在生成题目，请稍候…';
+        interview.busy = true;
+        syncInterviewActions();
         try {
           const data = await json('/api/evidence/interviews', {
             method: 'POST',
-            body: JSON.stringify({ target, questionCount: count, ...(focus ? { focus } : {}), ...(options.reuse ? { startNew: true } : {}) })
+            body: JSON.stringify({ target, ...(count ? { questionCount: count } : {}), ...(focus ? { focus } : {}), ...(options.reuse && interview.session?.difficulty ? { difficulty: interview.session.difficulty } : {}), ...(options.reuse ? { startNew: true } : {}) })
           });
-          interview.target = target; interview.count = count; interview.focus = focus; interview.session = data.interview;
           hint.textContent = data.interview.status === 'preparation_failed'
             ? '面试已创建，但题目生成失败，可以稍后重试。'
-            : '训练已开始，题目显示在右侧。';
+            : '训练已开始，题目显示在本页下方。';
           renderSession(data.interview);
           await interviewPanel();
         } catch (error) { hint.textContent = error.message; }
+        finally { interview.busy = false; syncInterviewActions(); }
+      }
+      function syncInterviewActions() {
+        const session = interview.session;
+        const active = session?.status === 'active';
+        document.querySelector('#interview-answer').disabled = interview.busy || !active || !session?.currentQuestion;
+        document.querySelector('#interview-answer-form button[type="submit"]').disabled = interview.busy || !active || !session?.currentQuestion;
+        const finish = document.querySelector('[data-interview-finish]');
+        const retryReport = session?.reportStatus === 'failed' && session?.recovery?.retryable;
+        finish.disabled = interview.busy || (!active && !retryReport);
+        finish.textContent = retryReport ? '重新生成报告' : '提前结束';
+        const again = document.querySelector('[data-interview-again]');
+        again.disabled = interview.busy || !session || active || session.status === 'preparing';
+        again.textContent = session?.status === 'preparation_failed' ? '重新生成题目' : '按同样范围再练一场';
+        document.querySelector('#interview-start-form button[type="submit"]').disabled = interview.busy;
       }
       function renderSession(session) {
         const title = document.querySelector('#interview-question-title');
@@ -283,6 +324,10 @@
         const feedback = document.querySelector('#interview-feedback');
         const report = document.querySelector('#interview-report');
         if (!title) return;
+        const previousId = interview.session?.interviewId;
+        interview.session = session;
+        if (previousId !== session?.interviewId) document.querySelector('#interview-answer').value = '';
+        syncInterviewActions();
         progress.replaceChildren(); feedback.replaceChildren(); report.replaceChildren();
         if (!session) {
           title.textContent = '尚未开始面试';
@@ -292,18 +337,23 @@
           report.append(rowText('结束一场面试后在这里显示报告与局限。'));
           return;
         }
-        interview.session = session;
+        interview.target = session.target;
+        interview.count = session.totalQuestions;
+        interview.focus = session.focus || '';
         status.textContent = statusText[session.status] || session.status;
         const target = session.target || {};
-        scope.textContent = target.kind === 'job' ? `本场范围：岗位 ${target.jobId}` : target.kind === 'skills' ? `本场范围：能力 ${(target.skillIds || []).join('、')}` : `本场范围：项目 ${target.projectId}`;
+        scope.textContent = session.targetSnapshot?.title ? `本场范围：${session.targetSnapshot.title}` : target.kind === 'job' ? `本场范围：岗位 ${target.jobId}` : target.kind === 'skills' ? `本场范围：能力 ${(target.skillIds || []).join('、')}` : `本场范围：项目 ${target.projectId || target.project?.title || '手填项目'}`;
+        if (session.coverage?.missing?.length) scope.textContent += ` · ${session.coverage.missing.map(item => item.reason).join('；')}`;
         if (session.status === 'preparation_failed') {
           title.textContent = '题目生成失败';
           question.textContent = (session.coverage?.missing || []).map(item => item.reason).join('；') || '生成服务暂时不可用。';
+        } else if (session.status === 'preparing') {
+          title.textContent = '正在准备题目'; question.textContent = '请稍后刷新本场面试。';
         } else if (session.currentQuestion) {
           title.textContent = `第 ${session.currentQuestion.ordinal} 题 / 共 ${session.totalQuestions ?? '—'} 题`;
           question.textContent = session.currentQuestion.prompt;
         } else {
-          title.textContent = '本场题目已全部作答';
+          title.textContent = session.status === 'ended_early' ? '本场已提前结束' : '本场题目已全部作答';
           question.textContent = '可以查看下方报告，或按同样范围再练一场。';
         }
         for (const item of (session.questions || [])) {
@@ -313,6 +363,14 @@
           const answered = (session.answers || []).some(answer => answer.questionId === item.questionId);
           span.textContent = answered ? '已作答' : (session.currentQuestion?.questionId === item.questionId ? '当前题' : '待作答');
           row.append(strong, span); progress.append(row);
+          const answer = (session.answers || []).find(answer => answer.questionId === item.questionId);
+          if (answer) {
+            const detail = document.createElement('details');
+            const summary = document.createElement('summary'); summary.textContent = '查看题目与已提交回答';
+            detail.append(summary, rowText(item.prompt), rowText(answer.text));
+            if (answer.feedback?.suggestions?.length) detail.append(rowText(`建议：${answer.feedback.suggestions.join('；')}`));
+            progress.append(detail);
+          }
         }
         const last = (session.answers || []).at(-1)?.feedback;
         if (last) {
@@ -352,7 +410,13 @@
           strong.textContent = `${statusText[item.status] || item.status} · ${item.answeredCount}/${item.totalQuestions ?? '—'} 题`;
           const span = document.createElement('span'); span.className = 'growth-muted';
           span.textContent = `${fmt(item.createdAt)} · 报告：${statusText[item.reportStatus] || item.reportStatus}`;
-          row.append(strong, span); history.append(row);
+          const open = document.createElement('button'); open.type = 'button'; open.className = 'growth-action'; open.textContent = '查看 / 继续本场';
+          open.addEventListener('click', async () => {
+            if (interview.busy) return;
+            try { const data = await json(`/api/evidence/interviews/${encodeURIComponent(item.interviewId)}`); renderSession(data.interview); }
+            catch (error) { document.querySelector('#interview-scope-hint').textContent = error.message; }
+          });
+          row.append(strong, span, open); history.append(row);
         }
       }
       async function interviewPanel() {
@@ -360,8 +424,14 @@
         try {
           const data = await json('/api/evidence/interviews?limit=20');
           // 只有拿到进行中的会话时才切换面板；刚结束的会话与报告保留在页面上。
-          if (data.session) renderSession(data.session);
-          else if (!interview.session) renderSession(null);
+          if (interview.session) {
+            const fresh = await json(`/api/evidence/interviews/${encodeURIComponent(interview.session.interviewId)}`);
+            renderSession(fresh.interview);
+          } else if (data.session) renderSession(data.session);
+          else if (data.page?.items?.[0]) {
+            const latest = await json(`/api/evidence/interviews/${encodeURIComponent(data.page.items[0].interviewId)}`);
+            renderSession(latest.interview);
+          } else renderSession(null);
           renderInterviewHistory(data.page?.items || []);
         } catch (error) {
           const history = document.querySelector('#interview-history');
@@ -370,10 +440,12 @@
       }
       async function submitAnswer() {
         const hint = document.querySelector('#interview-scope-hint');
+        if (interview.busy) return;
         const session = interview.session;
         const answer = document.querySelector('#interview-answer').value.trim();
         if (!session || session.status !== 'active' || !session.currentQuestion) { hint.textContent = '当前没有可作答的题目。'; return; }
         if (!answer) { hint.textContent = '请先输入回答。'; return; }
+        interview.busy = true; syncInterviewActions(); hint.textContent = '正在保存回答并生成反馈…';
         try {
           const data = await json(`/api/evidence/interviews/${encodeURIComponent(session.interviewId)}/answers`, {
             method: 'POST',
@@ -384,21 +456,24 @@
           renderSession(data.interview);
           await interviewPanel();
         } catch (error) { hint.textContent = error.message; }
+        finally { interview.busy = false; syncInterviewActions(); }
       }
       async function finishInterview() {
         const hint = document.querySelector('#interview-scope-hint');
         const session = interview.session;
-        if (!session) { hint.textContent = '还没有进行中的面试。'; return; }
+        if (!session || interview.busy) return;
+        interview.busy = true; syncInterviewActions();
         try {
           const data = await json(`/api/evidence/interviews/${encodeURIComponent(session.interviewId)}/finish`, { method: 'POST', body: '{}' });
-          hint.textContent = data.report ? '面试已结束，报告已生成。' : '面试已结束；本场没有可用回答，未生成报告。';
+          hint.textContent = data.recovery ? data.recovery.action : data.report ? '面试已结束，报告已生成。' : '面试已结束；本场没有可用回答，未生成报告。';
           renderSession(data.interview);
           await interviewPanel();
         } catch (error) { hint.textContent = error.message; }
+        finally { interview.busy = false; syncInterviewActions(); }
       }
 
       /* ------------------------------- 学习记录 ------------------------------- */
-      const record = { items: [], selected: null };
+      const record = { items: [], selected: null, busy: false, pendingOccurred: null };
       function rangeQuery(value) {
         if (value === 'week') return { weekOf: new Date().toISOString() };
         const days = value === '30d' ? 30 : 7;
@@ -419,11 +494,17 @@
             fill(materialSelect, (files.files || []).map(file => ({ value: file.id, label: file.original_name })), '不引用材料');
           } catch { fill(materialSelect, [], '材料读取失败'); }
         }
+        try {
+          const data = await json('/api/evidence/records?limit=1');
+          fill(document.querySelector('#record-project-existing'), (data.projects || []).map(project => ({ value: project.projectId, label: project.title })), '请选择已有项目');
+        } catch { fill(document.querySelector('#record-project-existing'), [], '项目读取失败，请刷新重试'); }
+        syncProjectFields();
       }
-      async function refreshRecords() {
+      async function refreshRecordPage() {
         const list = document.querySelector('#record-list');
         if (!list) return;
         await prepareRecordInputs();
+        await Promise.all([refreshSkillCards(), loadLatestReview()]);
         const range = document.querySelector('#record-range').value;
         const kind = document.querySelector('#record-kind-filter').value;
         const skillId = document.querySelector('#record-skill-filter').value;
@@ -483,11 +564,18 @@
           const withdrawField = document.createElement('label'); withdrawField.className = 'full'; withdrawField.textContent = '撤回原因（撤回后不再参与新的评估）';
           const withdrawInput = document.createElement('input'); withdrawInput.placeholder = '例如：成果归属填写有误'; withdrawField.append(withdrawInput);
           const actions = document.createElement('div'); actions.className = 'growth-actions full';
+          const criteriaField = document.createElement('label'); criteriaField.textContent = '评估标准';
+          const criteriaSelect = document.createElement('select'); criteriaField.append(criteriaSelect);
+          fill(criteriaSelect, [], '一般能力标准');
+          try {
+            const jobs = await json('/api/career/jobs?limit=50');
+            fill(criteriaSelect, (jobs.items || []).map(job => ({ value: job.id, label: job.title })), '一般能力标准');
+          } catch { criteriaField.append(rowText('岗位读取失败，可按一般能力标准评估。')); }
           const saveButton = document.createElement('button'); saveButton.type = 'submit'; saveButton.className = 'primary'; saveButton.textContent = '保存修正';
           const assessButton = document.createElement('button'); assessButton.type = 'button'; assessButton.className = 'growth-action'; assessButton.textContent = '评估支持的能力';
           const withdrawButton = document.createElement('button'); withdrawButton.type = 'button'; withdrawButton.className = 'growth-action'; withdrawButton.textContent = '撤回这条记录';
           actions.append(saveButton, assessButton, withdrawButton);
-          form.append(titleField, contentField, durationField, occurredField, withdrawField, actions);
+          form.append(titleField, contentField, durationField, occurredField, withdrawField, criteriaField, actions);
           detail.append(title, content, meta, skills, form);
           const result = document.createElement('div'); result.className = 'growth-list'; detail.append(result);
           form.addEventListener('submit', async event => {
@@ -496,13 +584,14 @@
             if (titleInput.value.trim() && titleInput.value.trim() !== item.title) changes.title = titleInput.value.trim();
             if (contentInput.value.trim() && contentInput.value.trim() !== item.content) changes.content = contentInput.value.trim();
             if (durationInput.value !== '') changes.durationMinutes = Number(durationInput.value);
+            else if (item.durationMinutes != null) changes.durationMinutes = null;
             if (occurredInput.value.trim() && occurredInput.value.trim() !== item.occurredAt) changes.occurredAt = occurredInput.value.trim();
             if (!Object.keys(changes).length) { meta.textContent = '没有需要保存的修改。'; return; }
             try {
               await json(`/api/evidence/records/${encodeURIComponent(recordId)}`, {
                 method: 'PATCH', headers: { 'if-match': String(item.version) }, body: JSON.stringify({ action: 'amend', changes })
               });
-              await refreshRecords(); await showRecordDetail(recordId);
+              await refreshRecordPage(); await showRecordDetail(recordId);
             } catch (error) { meta.textContent = error.message; }
           });
           withdrawButton.addEventListener('click', async () => {
@@ -512,7 +601,7 @@
               await json(`/api/evidence/records/${encodeURIComponent(recordId)}`, {
                 method: 'PATCH', headers: { 'if-match': String(item.version) }, body: JSON.stringify({ action: 'withdraw', reason })
               });
-              await refreshRecords();
+              await refreshRecordPage();
               detail.replaceChildren(rowText('该记录已撤回，仍保留撤回说明，不再参与新的有效证据判断。'));
             } catch (error) { meta.textContent = error.message; }
           });
@@ -521,7 +610,7 @@
             if (!skillIds.length) { meta.textContent = '这条记录没有关联能力标识，无法评估。'; return; }
             try {
               const assessed = await json('/api/evidence/assessments', {
-                method: 'POST', body: JSON.stringify({ evidenceIds: [recordId], skillIds })
+                method: 'POST', body: JSON.stringify({ evidenceIds: [recordId], skillIds, ...(criteriaSelect.value ? { criteria: { kind: 'job', jobId: criteriaSelect.value } } : {}) })
               });
               result.replaceChildren();
               for (const finding of (assessed.assessment.findings || [])) {
@@ -570,9 +659,12 @@
       async function generateReview() {
         const el = document.querySelector('#review-list');
         const value = document.querySelector('#review-range').value;
-        const query = rangeQuery(value);
-        if (!query.from || !query.to) { if (el) el.replaceChildren(rowText('阶段复盘需要明确时间段。')); return; }
         try {
+          let query = rangeQuery(value);
+          if (value === 'week') {
+            const data = await json(`/api/evidence/records?weekOf=${encodeURIComponent(query.weekOf)}&limit=1`);
+            query = data.range;
+          }
           const data = await json('/api/evidence/reviews', { method: 'POST', body: JSON.stringify({ from: query.from, to: query.to }) });
           renderReview(data.review);
         } catch (error) { if (el) el.replaceChildren(rowText(error.message)); }
@@ -588,6 +680,7 @@
       }
       async function submitRecord(event) {
         event.preventDefault();
+        if (record.busy) return;
         const hint = document.querySelector('#record-form-hint');
         const kind = document.querySelector('#record-kind').value;
         const occurred = document.querySelector('#record-occurred').value;
@@ -595,7 +688,7 @@
           kind,
           title: document.querySelector('#record-title').value.trim(),
           content: document.querySelector('#record-content').value.trim(),
-          occurredAt: occurred ? new Date(occurred).toISOString() : new Date().toISOString()
+          occurredAt: occurred ? new Date(occurred).toISOString() : (record.pendingOccurred ??= new Date().toISOString())
         };
         const duration = document.querySelector('#record-duration').value;
         if (duration !== '') body.durationMinutes = Number(duration);
@@ -603,7 +696,9 @@
         if (skillId) body.skillIds = [skillId];
         const materialId = document.querySelector('#record-materials').value;
         if (materialId) body.materialRefs = [{ documentId: materialId }];
-        if (kind === 'project_outcome') {
+        const projectSource = document.querySelector('#record-project-source').value;
+        if (kind === 'project_outcome' && projectSource === 'none') { hint.textContent = '项目成果需要选择或填写项目；普通学习请选学习活动。'; return; }
+        if (projectSource === 'manual') {
           const projectTitle = document.querySelector('#record-project-title').value.trim();
           const projectGoal = document.querySelector('#record-project-goal').value.trim();
           const contribution = document.querySelector('#record-project-contribution').value.trim();
@@ -612,23 +707,36 @@
           if (!contribution && !contributionPending) { hint.textContent = '请填写本人贡献，或勾选“本人贡献待补充”。'; return; }
           body.project = { title: projectTitle, goal: projectGoal, contributionPending, ...(contribution ? { contribution } : {}) };
         }
+        if (projectSource === 'existing') {
+          const projectId = document.querySelector('#record-project-existing').value;
+          if (!projectId) { hint.textContent = '请选择已有项目。'; return; }
+          const contribution = document.querySelector('#record-project-contribution').value.trim();
+          const contributionPending = document.querySelector('#record-project-pending').checked;
+          if (kind === 'project_outcome' && !contribution && !contributionPending) { hint.textContent = '请填写本次本人贡献，或标记待补充。'; return; }
+          body.project = { projectId, contributionPending, ...(contribution ? { contribution } : {}) };
+        }
         if (!body.title || !body.content) { hint.textContent = '标题和内容不能为空。'; return; }
+        record.busy = true;
+        const submit = document.querySelector('#record-form button[type="submit"]'); submit.disabled = true;
         try {
           await json('/api/evidence/records', { method: 'POST', body: JSON.stringify(body) });
           hint.textContent = '记录已保存。';
           document.querySelector('#record-form').reset();
-          await refreshRecords();
+          record.pendingOccurred = null;
+          await refreshRecordPage();
         } catch (error) { hint.textContent = error.message; }
+        finally { record.busy = false; submit.disabled = false; }
       }
       function syncProjectFields() {
-        const isProject = document.querySelector('#record-kind').value === 'project_outcome';
-        for (const id of ['#record-project-title-field', '#record-project-goal-field', '#record-project-contribution-field', '#record-project-pending-field']) {
-          document.querySelector(id).hidden = !isProject;
-        }
+        const source = document.querySelector('#record-project-source').value;
+        for (const name of ['title', 'goal']) document.querySelector(`#record-project-${name}-field`).hidden = source !== 'manual';
+        for (const name of ['contribution', 'pending']) document.querySelector(`#record-project-${name}-field`).hidden = source !== 'manual' && source !== 'existing';
+        document.querySelector('#record-project-existing-field').hidden = source !== 'existing';
       }
 
       // 页面进入时会调用这两个函数；本脚本的实现覆盖上面的旧版本。
       renderInterviewPanel = interviewPanel;
+      refreshRecords = refreshRecordPage;
 
       // 聊天里 Agent 调用本模块工具成功后，自动切到对应页面，用户不用自己找。
       const toolPages = {
@@ -643,21 +751,35 @@
           handlers.tool_end?.(data);
           if (data?.error) return;                       // 工具失败时不跳转，保留对话里的错误说明
           const page = toolPages[data?.tool_name];
-          if (page) showPage(page);                      // showPage 会调用本页的刷新实现
+          if (page === 'interview') {
+            interview.session = null;
+            if (data.entity_id) {
+              void json(`/api/evidence/interviews/${encodeURIComponent(data.entity_id)}`)
+                .then(result => { renderSession(result.interview); showPage(page); })
+                .catch(error => { document.querySelector('#interview-scope-hint').textContent = error.message; });
+              return;
+            }
+          }
+          if (page) showPage(page);
         },
       }, options);
 
       document.querySelector('#interview-start-form')?.addEventListener('submit', event => { event.preventDefault(); void startInterview(); });
-      document.querySelector('[data-interview-resume]')?.addEventListener('click', () => void interviewPanel());
+      document.querySelector('[data-interview-resume]')?.addEventListener('click', () => { if (!interview.busy) { interview.session = null; void interviewPanel(); } });
       document.querySelector('#interview-answer-form')?.addEventListener('submit', event => { event.preventDefault(); void submitAnswer(); });
       document.querySelector('[data-interview-finish]')?.addEventListener('click', () => void finishInterview());
       document.querySelector('[data-interview-again]')?.addEventListener('click', () => void startInterview({ reuse: true }));
       document.querySelector('#record-form')?.addEventListener('submit', event => void submitRecord(event));
       document.querySelector('#record-kind')?.addEventListener('change', syncProjectFields);
-      document.querySelector('#record-filter-form')?.addEventListener('submit', event => { event.preventDefault(); void refreshRecords(); });
+      document.querySelector('#record-filter-form')?.addEventListener('submit', event => { event.preventDefault(); void refreshRecordPage(); });
       document.querySelector('#review-form')?.addEventListener('submit', event => { event.preventDefault(); void generateReview(); });
       document.querySelector('[data-record-skills]')?.addEventListener('click', () => void refreshSkillCards());
+      document.querySelector('#record-project-source').addEventListener('change', syncProjectFields);
+      document.querySelector('#interview-target-kind').addEventListener('change', syncInterviewProjectFields);
+      document.querySelector('#interview-target-project').addEventListener('change', syncInterviewProjectFields);
       syncProjectFields();
+      syncInterviewProjectFields();
+      renderSession(null);
     })();
   </script>
 </body>

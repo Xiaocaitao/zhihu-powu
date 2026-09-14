@@ -19,6 +19,7 @@ type ShimElement = {
   value: string;
   checked: boolean;
   hidden: boolean;
+  disabled: boolean;
   className: string;
   type: string;
   placeholder: string;
@@ -100,6 +101,10 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     assert.ok(!html.includes('id="interview-form"'), "面试表单不应再使用旧的跳会话钩子");
     assert.ok(!html.includes('data-record-action="add"'), "学习记录不应再使用旧的跳会话钩子");
     assert.ok(html.includes('data-profile-action="read"'), "其它模块的入口应保持原样");
+    assert.ok(html.includes("if(name==='record')void refreshRecords()"), '主导航应调用导出的模块刷新入口');
+    for (const id of ['record-project-source', 'record-project-existing', 'interview-target-project-title', 'interview-target-project-goal']) {
+      assert.ok(html.includes(`id="${id}"`), `${id} 必须存在于真实 HTML，不能只靠测试 DOM 自动虚构`);
+    }
 
     const block = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)].at(-1)?.[2];
     assert.ok(block, "应能找到页面最后一段脚本");
@@ -115,6 +120,7 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
       URLSearchParams,
       URL,
       Date,
+      crypto: globalThis.crypto,
       fetch: async (path: string, init?: RequestInit) => {
         calls.push(String(path));
         return fetch(origin + String(path), { ...init, headers: { "content-type": "application/json", cookie, ...(init?.headers ?? {}) } });
@@ -132,6 +138,9 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     vm.runInContext(block, context, { filename: "index-evidence-script" });
     const panel = sandbox.renderInterviewPanel as () => Promise<void>;
     assert.equal(typeof panel, "function");
+    assert.equal(element('#interview-answer').disabled, true, '未开始时不能回答');
+    await (sandbox.refreshRecords as () => Promise<void>)();
+    assert.ok(calls.some(path => path.startsWith('/api/evidence/records')), '进入学习记录页必须调用新版初始化入口');
 
     // 记录一条学习：页面表单直接落库，时间线在页内刷新。
     element("#record-title").value = "页内记录：HTTP 练习";
@@ -185,6 +194,12 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     toolEnd({ tool_name: "start_interview", error: true });
     toolEnd({ tool_name: "get_learning_records", error: false });
     assert.deepEqual(pageCalls, ["interview", "record"], "失败或只读工具不应触发跳转");
+
+    const sessions = await (await fetch(`${origin}/api/evidence/interviews`, { headers: { cookie } })).json();
+    const exactId = sessions.data.session.interviewId;
+    toolEnd({ tool_name: 'start_interview', error: false, entity_id: exactId });
+    await waitFor(() => pageCalls.length === 3);
+    assert.ok(calls.includes(`/api/evidence/interviews/${exactId}`), 'AI 应打开工具返回的具体会话');
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
   }

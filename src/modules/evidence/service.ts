@@ -77,6 +77,12 @@ export class EvidenceService {
         if (!existing) return fail("NOT_FOUND", "关联的项目不存在或不可访问");
         projectId = existing.projectId;
         project = existing;
+        contribution = projectInput.contribution ?? null;
+        contributionPending = projectInput.contributionPending ?? !contribution;
+        if (contributionPending) {
+          missingInformation.push("本次项目成果的本人贡献待补充");
+          addMissing("project.contribution", "本次成果缺少本人贡献说明");
+        }
       } else {
         project = {
           projectId: randomUUID(), ownerId: ctx.ownerId, title: projectInput.title, goal: projectInput.goal,
@@ -279,7 +285,7 @@ export class EvidenceService {
 
   async queryRecords(ctx: EvidenceContext, state: EvidenceState, query: RecordQuery): Promise<CapabilityResult<
     | { record: RecordDTO; coverage: Coverage }
-    | { page: Page<RecordDTO>; range: { from: string | null; to: string | null; timeZone: string }; coverage: Coverage }
+    | { page: Page<RecordDTO>; projects: { projectId: string; title: string; goal: string }[]; range: { from: string | null; to: string | null; timeZone: string }; coverage: Coverage }
   >> {
     if ("mode" in query && query.mode === "detail") {
       const record = state.records.find(item => item.recordId === query.recordId);
@@ -301,15 +307,19 @@ export class EvidenceService {
     const limit = list.limit ?? 20;
     const filtered = state.records
       .filter(record => record.ownerId === ctx.ownerId && record.status === "active")
-      .filter(record => !from || record.occurredAt >= from)
-      .filter(record => !to || record.occurredAt < to)
+      // 时间比较一律按时刻（epoch）而不是字符串：ISO 允许携带不同偏移量，
+      // 字符串比较会把 +08:00 与 Z 的同一时刻排错。
+      .filter(record => !from || Date.parse(record.occurredAt) >= Date.parse(from))
+      .filter(record => !to || Date.parse(record.occurredAt) < Date.parse(to))
       .filter(record => !kinds || kinds.includes(record.kind))
       .filter(record => !list.taskId || record.taskId === list.taskId)
       .filter(record => !list.skillId || record.skillRefs.some(skill => skill.skillId === list.skillId))
-      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordId.localeCompare(a.recordId));
+      .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || b.recordId.localeCompare(a.recordId));
     const after = list.cursor ? filtered.filter(record => {
       const cursor = decodeCursorPayload(list.cursor!);
-      return record.occurredAt < cursor.at || (record.occurredAt === cursor.at && record.recordId < cursor.id);
+      const at = Date.parse(record.occurredAt);
+      const cursorAt = Date.parse(cursor.at);
+      return at < cursorAt || (at === cursorAt && record.recordId < cursor.id);
     }) : filtered;
     const items = after.slice(0, limit).map(toDto);
     const hasMore = after.length > limit;
@@ -323,6 +333,7 @@ export class EvidenceService {
     return ok({
       page: { items, hasMore, nextCursor: hasMore && last ? encodeCursor(last.occurredAt, last.recordId, scope) : null },
       range: { from, to, timeZone }, coverage,
+      projects: state.projects.filter(project => project.ownerId === ctx.ownerId).map(({ projectId, title, goal }) => ({ projectId, title, goal })),
     }, "已读取学习记录");
   }
 
@@ -342,8 +353,7 @@ export class EvidenceService {
     if (input.criteria?.kind === "job") {
       const job = await this.ports.career?.getJobRequirements(ctx, input.criteria.jobId);
       if (!job?.value) {
-        coverage.complete = false;
-        coverage.missing.push({ source: "career", reason: job?.coverage.missing[0]?.reason ?? "岗位要求不可用" });
+        return fail("DEPENDENCY_UNAVAILABLE", job?.coverage.missing[0]?.reason ?? "岗位要求不可用，无法按该岗位评估", true);
       } else criteria = { summary: `${job.value.title} 岗位要求`, requirements: job.value.requirements };
     } else if (input.criteria?.kind === "task") {
       const task = await this.ports.learning?.getTask(ctx, input.criteria.taskId);
@@ -389,8 +399,8 @@ export class EvidenceService {
     }
     const relevantRecords = state.records.filter(record => {
       if (record.ownerId !== ctx.ownerId || record.status !== "active") return false;
-      if (query.from && record.occurredAt < query.from) return false;
-      if (query.to && record.occurredAt >= query.to) return false;
+      if (query.from && Date.parse(record.occurredAt) < Date.parse(query.from)) return false;
+      if (query.to && Date.parse(record.occurredAt) >= Date.parse(query.to)) return false;
       if (query.sources && !query.sources.includes(record.source.domain)) return false;
       return true;
     });
@@ -445,7 +455,7 @@ export class EvidenceService {
     }
     const records = state.records.filter(record =>
       record.ownerId === ctx.ownerId && record.status === "active" &&
-      record.occurredAt >= from && record.occurredAt < to &&
+      Date.parse(record.occurredAt) >= Date.parse(from) && Date.parse(record.occurredAt) < Date.parse(to) &&
       (!input.taskIds?.length || (record.taskId ? input.taskIds.includes(record.taskId) : false)) &&
       (!input.projectIds?.length || (record.projectId ? input.projectIds.includes(record.projectId) : false)) &&
       (!input.skillIds?.length || record.skillRefs.some(skill => input.skillIds!.includes(skill.skillId))));
@@ -514,8 +524,8 @@ export class EvidenceService {
       interviewId: randomUUID(), version: 1, ownerId: ctx.ownerId, target: input.target,
       status: "preparing", difficulty: input.difficulty ?? null, totalQuestions: questionCount, answeredCount: 0,
       currentQuestion: null, questions: [], answers: [], report: null, reportStatus: "not_started",
-      coverage: { complete: true, missing: [], observedAt: now },
-      targetSnapshot: { revision: resolved.revision, requirements: resolved.requirements, skillRefs: resolved.skills },
+      coverage: resolved.coverage,
+      targetSnapshot: { revision: resolved.revision, requirements: resolved.requirements, skillRefs: resolved.skills, title: resolved.title, project: resolved.project },
       focus: input.focus ?? null, createdAt: now, endedAt: null, endedEarly: false, recovery: null,
     };
     const planInput: InterviewPlanInput = {
@@ -750,7 +760,9 @@ export class EvidenceService {
   }
   private affectedReviews(state: EvidenceState, record: LearningRecord) {
     return state.reviews.filter(review =>
-      review.ownerId === record.ownerId && review.range.from <= record.occurredAt && record.occurredAt < review.range.to);
+      review.ownerId === record.ownerId &&
+      Date.parse(review.range.from) <= Date.parse(record.occurredAt) &&
+      Date.parse(record.occurredAt) < Date.parse(review.range.to));
   }
   private withValidity(state: EvidenceState, assessment: Assessment): Assessment {
     const stale = assessment.evidenceIds.some(id => {
@@ -800,29 +812,41 @@ export class EvidenceService {
   }
 
   private async resolveTarget(ctx: EvidenceContext, state: EvidenceState, target: InterviewTarget): Promise<
-    | { ok: true; skills: SkillRef[]; requirements: string | null; revision: string; project: { title: string; goal: string; contribution: string | null } | null; baseline: unknown }
+    | { ok: true; skills: SkillRef[]; requirements: string | null; revision: string; project: { title: string; goal: string; contribution: string | null } | null; baseline: unknown; title: string; coverage: Coverage }
     | { ok: false; code: "INVALID_ARGUMENT" | "NOT_FOUND"; message: string }
   > {
     let requirements: string | null = null;
     let revision = "1";
+    let title = "专项能力训练";
+    const coverage: Coverage = { complete: true, missing: [], observedAt: this.now() };
     let skillIds = target.skillIds ?? [];
     if (target.kind === "job") {
       const job = await this.ports.career?.getJobRequirements(ctx, target.jobId);
       if (!job?.value) return { ok: false, code: "NOT_FOUND", message: job?.coverage.missing[0]?.reason ?? "岗位不存在或不可访问" };
       requirements = job.value.requirements;
       revision = job.value.revision;
+      title = job.value.title;
+      coverage.missing.push(...job.coverage.missing);
       skillIds = unique([...skillIds, ...job.value.skillRefs.map(skill => skill.skillId)]);
     }
-    let project: { title: string; goal: string; contribution: string | null } | null = null;
-    const projectId = target.kind === "project" ? target.projectId : target.projectId;
+    let project: { title: string; goal: string; contribution: string | null } | null = target.project
+      ? { title: target.project.title, goal: target.project.goal, contribution: target.project.contribution ?? null }
+      : null;
+    const projectId = target.projectId;
     if (projectId) {
       const found = state.projects.find(item => item.projectId === projectId && item.ownerId === ctx.ownerId);
       if (!found) return { ok: false, code: "NOT_FOUND", message: "项目不存在或不可访问" };
-      const record = state.records.find(item => item.projectId === projectId && item.contribution);
+      const records = state.records.filter(item => item.projectId === projectId && item.status === "active");
+      const record = records.filter(item => item.contribution && !item.contributionPending).sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))[0];
+      skillIds = unique([...skillIds, ...records.flatMap(item => item.skillRefs.map(skill => skill.skillId))]);
       project = { title: found.title, goal: found.goal, contribution: record?.contribution ?? null };
-      if (!project.contribution) return { ok: false, code: "INVALID_ARGUMENT", message: "该项目缺少本人贡献说明，请先补充项目成果" };
     }
-    if (!skillIds.length) return { ok: false, code: "INVALID_ARGUMENT", message: "请提供明确的训练能力范围" };
+    // 岗位要求或项目资料可能只有自然语言，仍允许通用训练；专项能力模式
+    // 的 schema 已保证至少有一个 skillId。
+    if (target.kind === "project" && !project) return { ok: false, code: "INVALID_ARGUMENT", message: "请提供项目资料" };
+    if (target.kind === "skills" && !skillIds.length) return { ok: false, code: "INVALID_ARGUMENT", message: "请指定训练能力" };
+    if (!skillIds.length) coverage.missing.push({ source: "skills", reason: "尚无结构化能力标识，本场按岗位要求或项目说明训练，不生成能力等级结论" });
+    if (project && !project.contribution) coverage.missing.push({ source: "project", reason: "本人贡献尚未明确，项目背景不作为已验证的个人成果" });
     const skills = await this.resolveSkills(skillIds);
     if (skills.missingIds.length) {
       return { ok: false, code: "INVALID_ARGUMENT", message: `以下能力标识不在共享目录中：${skills.missingIds.join("、")}` };
@@ -830,7 +854,10 @@ export class EvidenceService {
     let baseline: unknown = null;
     const profile = await this.ports.profile?.getLearningContext(ctx);
     if (profile?.value) baseline = profile.value.baseline;
-    return { ok: true, requirements, revision, project, baseline, skills: skills.items.map(({ skillId, name }) => ({ skillId, name })) };
+    if (target.kind === "project" && project) title = project.title;
+    if (target.kind === "skills") title = skills.items.map(skill => skill.name).join("、");
+    coverage.complete = coverage.missing.length === 0;
+    return { ok: true, requirements, revision, project, baseline, title, coverage, skills: skills.items.map(({ skillId, name }) => ({ skillId, name })) };
   }
 
   private async resolveSkills(skillIds: string[]): Promise<{ items: SkillDefinition[]; missingIds: string[] }> {

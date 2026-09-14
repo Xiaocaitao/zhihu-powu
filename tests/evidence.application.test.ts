@@ -5,6 +5,16 @@ import { activityInput, applicationWith, KNOWN_SKILL, ownerContext } from "./sup
 
 const ctx = ownerContext("owner-restart");
 
+test('Career 读取两条未评估记录时不能直接判为掌握', async () => {
+  const { app } = applicationWith();
+  await app().recordLearningEvidence(ownerContext('owner-count'), activityInput({ skillIds: [KNOWN_SKILL] }));
+  await app().recordLearningEvidence(ownerContext('owner-count'), activityInput({ title: '第二次练习', skillIds: [KNOWN_SKILL] }));
+  const [snapshot] = await app().getSkillEvidenceSnapshot(ownerContext('owner-count'), { skillCodes: [KNOWN_SKILL] });
+  assert.equal(snapshot.evidenceCount, 2);
+  assert.equal(snapshot.assessed, false);
+  assert.equal(snapshot.support, 'insufficient');
+});
+
 test("应用层写入落库后，新的应用实例仍能读到记录、复盘与评估", async () => {
   const { app } = applicationWith();
   const saved = await app().recordLearningEvidence(ctx, activityInput({ skillIds: [KNOWN_SKILL] }));
