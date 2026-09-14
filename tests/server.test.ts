@@ -55,9 +55,12 @@ test("learning growth endpoint returns saved draft plan and today's tasks", asyn
   assert.ok(create);
   const token = "test-learning-owner";
   const owner = `anonymous:${createHash("sha256").update(token).digest("hex")}`;
-  // 计划起止必须相对“今天”，否则用例会在写死日期过期后失败（服务端按真实今天取今日任务）。
-  const testToday = new Date().toLocaleDateString("en-CA");
-  const testPlanEnd = new Date(Date.now() + 28 * 86400000).toLocaleDateString("en-CA");
+  // 服务端取“今天”固定使用 Asia/Shanghai（见 LearningService.getTodayTasks），
+  // 任务排期默认等于计划开始日期，因此这里必须用同一时区计算，否则 CI（UTC）会差一天。
+  const shanghaiDate = (offsetDays = 0) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" })
+    .format(new Date(Date.now() + offsetDays * 86400000));
+  const testToday = shanghaiDate();
+  const testPlanEnd = shanghaiDate(28);
   const saved = await create.execute({ ownerId: owner, requestId: "learning-read-test", operationKey: "learning-save-test" }, { mode: "trial", sourceProfileVersion: 1, startDate: testToday, endDate: testPlanEnd, weeklyMinutes: 360, learningGoals: ["后端平台工程"], stages: [{ title: "TypeScript 基础", objective: "掌握类型系统", tasks: [{ title: "完成类型练习", description: "完成一组 TypeScript 类型练习", taskType: "practice", estimatedMinutes: 60 }] }] });
   assert.equal(saved.ok, true);
   const plan = (saved.data as { plan: { id: string; version: number; stages: Array<{ tasks: Array<{ id: string }> }> } }).plan;
