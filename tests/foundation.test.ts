@@ -47,3 +47,12 @@ test("growth prompt keeps first learning plans in trial mode", async () => {
   assert.match(prompt, /首次生成.*mode=trial/);
   assert.match(prompt, /不要把 final draft 当成可确认计划/);
 });
+
+test("growth prompt defines the learning assistant chain", async () => {
+  const prompt = await buildPrompt({ message: "我要学习 PostgreSQL 性能优化", sessionId: "chain-1" });
+  assert.match(prompt, /至少调用一次 search_zhihu/);
+  assert.match(prompt, /明确标为 trial 的学习计划草案/);
+  assert.match(prompt, /用户未确认前不得调用 confirm_learning_plan/);
+  assert.match(prompt, /先调用 update_learning_task 更新状态/);
+  assert.match(prompt, /同一 taskId 调用 record_learning_evidence/);
+});

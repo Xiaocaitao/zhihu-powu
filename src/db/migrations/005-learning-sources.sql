@@ -1,0 +1,1 @@
+ALTER TABLE learning_plans ADD COLUMN IF NOT EXISTS sources JSONB NOT NULL DEFAULT '[]';
