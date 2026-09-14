@@ -12,6 +12,8 @@ import { PiChatRuntime } from "./agent/runtime/pi-chat-runtime.ts";
 import { createZhihuOAuth, type ZhihuOAuthProfile, type ZhihuOAuthProvider } from "./integrations/zhihu/oauth.ts";
 import { matchApplicationRoute, type ApplicationRoute } from "./http/routes.ts";
 import { createCareerRoutes, careerRouteErrorStatus } from "./http/career.ts";
+import { createEvidenceRoutes } from "./http/evidence.ts";
+import { createSkillRoutes } from "./http/skills.ts";
 import type { CapabilityRegistry } from "./agent/tools/registry.ts";
 import type { PromptContext } from "./agent/prompts/system.ts";
 import { PostgresKnowledgeStore } from "./modules/knowledge/postgres-repository.ts";
@@ -23,7 +25,6 @@ import { PostgresCareerRepository } from "./modules/career/postgres-repository.t
 import { PostgresLearningRepository } from "./modules/learning/postgres-repository.ts";
 import { PostgresEvidenceRepository } from "./modules/evidence/postgres-repository.ts";
 import { EvidenceApplication } from "./modules/evidence/application.ts";
-import { handleEvidenceHttp } from "./modules/evidence/http.ts";
 import { createEvidenceService } from "./modules/evidence/defaults.ts";
 import { createEvidencePorts } from "./app/evidence-ports.ts";
 import { MockEvidenceGeneration } from "./modules/evidence/generation.ts";
@@ -45,7 +46,13 @@ export function createPowuServer(options: Options = {}): Server {
   const oauth = options.oauth ?? createZhihuOAuth();
   const careerApplication = options.applications?.careerApplication ?? options.careerApplication;
   const capabilityRegistry = options.applications?.capabilityRegistry ?? options.capabilityRegistry;
-  const applicationRoutes = [...(options.applicationRoutes ?? []), ...(careerApplication ? createCareerRoutes(careerApplication) : [])];
+  const applicationRoutes = [
+    ...(options.applicationRoutes ?? []),
+    ...(careerApplication ? createCareerRoutes(careerApplication) : []),
+    // 始终注册 Evidence 路由：缺少注册表时由模块返回 503，而不是静默 404。
+    ...createEvidenceRoutes(capabilityRegistry),
+    ...createSkillRoutes(capabilityRegistry),
+  ];
   return createServer(async (req, res) => {
     const path = (req.url ?? "/").split("?", 1)[0];
     if (path === "/healthz") return send(res, 200, { ok: true });
@@ -139,16 +146,8 @@ export function createPowuServer(options: Options = {}): Server {
         createReadStream(file.path).pipe(res);
       } catch { return send(res, 404, { error: "file_missing" }); }
       return;
-    }    if (path.startsWith("/api/evidence/")) {
-      const result = await handleEvidenceHttp({
-        method: req.method ?? "GET", path,
-        query: new URL(req.url ?? "/", "http://localhost").searchParams,
-        operationKey: req.headers["idempotency-key"],
-        ifMatch: req.headers["if-match"],
-        readJson: () => readBody(req),
-      }, { ownerId: authenticatedOwner(req, res), requestId: randomUUID() }, capabilityRegistry);
-      return send(res, result.status, result.body);
-    }    if (path === "/api/growth/profile" && req.method === "GET") {
+    }
+    if (path === "/api/growth/profile" && req.method === "GET") {
       if (!capabilityRegistry) return send(res, 503, { ok: false, error: "growth_unavailable" });
       const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
       const profile = capabilityRegistry.list().find(capability => capability.name === "get_user_profile");
