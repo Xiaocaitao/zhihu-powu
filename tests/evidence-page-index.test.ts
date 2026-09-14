@@ -101,6 +101,11 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     assert.ok(!html.includes('id="interview-form"'), "面试表单不应再使用旧的跳会话钩子");
     assert.ok(!html.includes('data-record-action="add"'), "学习记录不应再使用旧的跳会话钩子");
     assert.ok(html.includes('data-profile-action="read"'), "其它模块的入口应保持原样");
+    assert.match(html, /function isNearBottom\(/, "聊天应判断用户是否仍在底部附近");
+    assert.match(html, /function scrollToLatest\(/, "聊天应提供统一的最新消息定位方法");
+    assert.match(html, /scrollToLatest\(chatMessages,true\)/, "历史会话加载后应定位到最新消息");
+    assert.match(html, /Agent 正在分析你的问题|正在整理回答/, "页面应展示 Agent 阶段状态");
+    assert.doesNotMatch(html, /thinking\.textContent\s*=\s*data\.delta/, "不得把原始思考文本渲染到页面");
     assert.ok(html.includes("if(name==='record')void refreshRecords()"), '主导航应调用导出的模块刷新入口');
     for (const id of ['record-project-source', 'record-project-existing', 'interview-target-project-title', 'interview-target-project-goal']) {
       assert.ok(html.includes(`id="${id}"`), `${id} 必须存在于真实 HTML，不能只靠测试 DOM 自动虚构`);
