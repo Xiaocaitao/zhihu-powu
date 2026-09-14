@@ -174,3 +174,6 @@ SET start_date = p.start_date,
     ), 0)
 FROM learning_plans p
 WHERE p.id = s.plan_id;
+
+-- The conversion above is complete; new writes must use learning_tasks only.
+ALTER TABLE learning_stages DROP COLUMN IF EXISTS tasks;

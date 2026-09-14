@@ -5,7 +5,8 @@ import type { LearningIdempotencyRecord, LearningRepository } from "./repository
 type Row = Record<string, any>;
 
 export class PostgresLearningRepository implements LearningRepository {
-  constructor(private readonly pool: Pool) {}
+  private readonly pool: Pool;
+  constructor(pool: Pool) { this.pool = pool; }
 
   async getPlan(ownerId: string, planId?: string) {
     const result = await this.pool.query<Row>(`
