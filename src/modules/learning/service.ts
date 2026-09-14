@@ -27,8 +27,14 @@ export class LearningService implements LearningApplication {
 
   async getTodayTasks(ctx: LearningContext, input: { date?: string }) {
     const plan = await this.repo.getPlan(ctx.ownerId);
-    const date = input.date ?? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
+    const date = input.date ?? this.todayInShanghai();
     return plan?.stages.flatMap(stage => stage.tasks).filter(task => task.scheduleDate === date || task.schedules?.some(schedule => schedule.scheduleDate === date)) ?? [];
+  }
+
+  private todayInShanghai() {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
   }
 
   async getLearningFeedback(ctx: LearningContext, input: { planId?: string }) {
