@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CapabilityResult } from "../../contracts/capability.ts";
 
 export const profileSections = ["identity", "background", "interests", "availability", "preferences", "goals"] as const;
 export type ProfileSection = (typeof profileSections)[number];
@@ -19,7 +20,7 @@ export type ProfileFactPayload =
 export interface ProfileFactDTO {
   id: string;
   factType: ProfileFactType;
-  section: Exclude<ProfileSection, "goals">;
+  section: ProfileSection;
   value: ProfileFactPayload["value"];
   source: ProfileFactSource;
   isConfirmed: boolean;
@@ -53,16 +54,7 @@ export interface ProfileCompletionDTO {
   ruleVersion: string;
 }
 
-export interface ProfileWriteResult<TFact extends ProfileFactDTO | undefined = ProfileFactDTO | undefined> {
-  ok: boolean;
-  changed: boolean;
-  domain: "profile";
-  data?: { fact?: TFact; goal?: UserGoalDTO };
-  entityId?: string;
-  version?: number;
-  status?: string;
-  summary?: string;
-}
+export type ProfileWriteResult<TFact extends ProfileFactDTO | undefined = ProfileFactDTO | undefined> = CapabilityResult<{ fact?: TFact; goal?: UserGoalDTO }>;
 
 export interface GetUserProfileInput { sections?: ProfileSection[] }
 export interface GetProfileCompletionInput { includeMissingFields?: boolean }
@@ -73,9 +65,11 @@ export type SaveProfileFactInput = ProfileFactPayload & {
   expectedVersion?: number;
 }
 export interface UpdateUserGoalInput {
-  direction: string | null;
+  goalType: "target_direction";
+  value: { direction: string | null };
   expectedVersion?: number;
 }
+export type LegacyUpdateUserGoalInput = { direction: string | null; expectedVersion?: number };
 
 const nonEmpty = z.string().trim().min(1);
 export const getUserProfileInputSchema = z.object({ sections: z.array(z.enum(profileSections)).optional() });
@@ -96,4 +90,7 @@ export const saveProfileFactInputSchema = z.object({
   evidenceRef: z.object({ evidenceId: nonEmpty, evaluatedAt: nonEmpty }).optional(),
   expectedVersion: z.number().int().positive().optional(),
 });
-export const updateUserGoalInputSchema = z.object({ direction: z.string().trim().nullable(), expectedVersion: z.number().int().positive().optional() });
+export const updateUserGoalInputSchema = z.union([
+  z.object({ goalType: z.literal("target_direction"), value: z.object({ direction: z.string().trim().nullable() }), expectedVersion: z.number().int().positive().optional() }),
+  z.object({ direction: z.string().trim().nullable(), expectedVersion: z.number().int().positive().optional() }),
+]);
