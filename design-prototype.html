@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>知乎 · 看山助手（视觉原型）</title>
+  <style>
+    :root {
+      --blue: #056de8;
+      --blue-2: #2d8cff;
+      --ink: #182333;
+      --muted: #7e8b9f;
+      --line: #e7edf5;
+      --sidebar: #f7faff;
+      --canvas: #ffffff;
+      --bubble: #f3f7fc;
+      --shadow: 0 18px 50px rgba(35, 78, 132, .09);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 980px; height: 100vh; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--ink); background: var(--canvas); }
+    button, textarea { font: inherit; }
+    button { border: 0; cursor: pointer; }
+    .app { display: grid; grid-template-columns: 276px 1fr; height: 100vh; }
+    .sidebar { position: relative; display: flex; flex-direction: column; gap: 20px; padding: 22px 14px 16px; background: var(--sidebar); border-right: 1px solid var(--line); }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; padding: 0 9px 2px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 750; letter-spacing: -.02em; }
+    .logo { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; color: #fff; background: linear-gradient(145deg, #1694ff, #056de8); font-size: 17px; font-weight: 800; box-shadow: 0 6px 14px rgba(5,109,232,.22); }
+    .brand small { display: block; margin-top: 2px; font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .02em; }
+    .icon-btn { width: 32px; height: 32px; border-radius: 9px; color: #7890ad; background: transparent; font-size: 18px; }
+    .icon-btn:hover { color: var(--blue); background: #eaf3ff; }
+    .new-chat { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border-radius: 11px; color: #fff; background: var(--blue); font-size: 14px; font-weight: 650; box-shadow: 0 8px 17px rgba(5,109,232,.2); transition: .18s ease; }
+    .new-chat:hover { transform: translateY(-1px); background: #005cc8; }
+    .new-chat span:first-child { font-size: 21px; font-weight: 300; line-height: 15px; }
+    .section-title { padding: 0 12px; color: #9aa8ba; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .chat-list { display: flex; flex-direction: column; gap: 3px; margin-top: -11px; overflow: auto; }
+    .chat { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 11px; border-radius: 10px; color: #45556b; background: transparent; text-align: left; font-size: 13px; }
+    .chat:hover { background: #edf4fc; }
+    .chat.active { color: var(--ink); background: #e8f2ff; font-weight: 650; }
+    .chat .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #bad0e9; }
+    .chat.active .dot { background: var(--blue); box-shadow: 0 0 0 4px rgba(5,109,232,.1); }
+    .chat .label { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .chat time { color: #a6b2c1; font-size: 10px; }
+    .sidebar-spacer { flex: 1; }
+    .profile { display: flex; align-items: center; gap: 10px; padding: 10px 9px 3px; border-top: 1px solid var(--line); }
+    .avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; background: #25496e; font-size: 12px; font-weight: 700; }
+    .profile strong { display: block; font-size: 12px; }
+    .profile span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
+    .main { position: relative; display: flex; flex-direction: column; min-width: 0; background: radial-gradient(circle at 85% 8%, #f5faff 0, transparent 34%), #fff; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; height: 62px; padding: 0 34px; border-bottom: 1px solid rgba(231,237,245,.8); }
+    .crumb { display: flex; align-items: center; gap: 9px; font-size: 13px; color: #9aa8ba; }
+    .crumb strong { color: var(--ink); font-size: 14px; }
+    .crumb .badge { padding: 4px 8px; border-radius: 99px; color: #2673cf; background: #eaf3ff; font-size: 11px; font-weight: 650; }
+    .top-actions { display: flex; gap: 4px; }
+    .content { width: min(900px, calc(100% - 80px)); flex: 1; margin: 0 auto; padding: 50px 0 170px; overflow: auto; }
+    .welcome { display: flex; align-items: flex-start; gap: 15px; margin-bottom: 40px; }
+    .welcome-mark { width: 42px; height: 42px; object-fit: contain; margin-top: 2px; }
+    .eyebrow { margin: 0 0 8px; color: var(--blue); font-size: 11px; font-weight: 750; letter-spacing: .12em; }
+    h1 { margin: 0; font-size: clamp(27px, 3vw, 38px); letter-spacing: -.045em; line-height: 1.18; }
+    .intro { max-width: 630px; margin: 13px 0 0; color: #75849a; font-size: 14px; line-height: 1.8; }
+    .message { display: flex; gap: 15px; margin: 24px 0; }
+    .message.user { justify-content: flex-end; }
+    .message.user .bubble { order: 1; color: #fff; background: var(--blue); border-radius: 18px 18px 4px 18px; }
+    .message.user .mini-avatar { order: 2; background: #daeaff; color: var(--blue); }
+    .mini-avatar { display: grid; place-items: center; flex: none; width: 30px; height: 30px; margin-top: 2px; border-radius: 10px; color: #fff; background: #dff0ff; overflow: hidden; font-size: 12px; font-weight: 700; }
+    .mini-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .bubble { max-width: 690px; padding: 15px 18px; border: 1px solid #eef2f7; border-radius: 4px 18px 18px 18px; background: #fff; box-shadow: 0 8px 22px rgba(36,77,125,.045); color: #3b4a5e; font-size: 14px; line-height: 1.75; }
+    .bubble p { margin: 0 0 10px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble strong { color: var(--ink); }
+    .checklist { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-top: 13px; padding-top: 13px; border-top: 1px solid #edf2f7; color: #667991; font-size: 13px; }
+    .checklist span::before { content: '✓'; display: inline-grid; place-items: center; width: 17px; height: 17px; margin-right: 6px; border-radius: 50%; color: var(--blue); background: #e8f3ff; font-size: 11px; }
+    .composer-wrap { position: absolute; right: 0; bottom: 0; left: 0; padding: 22px 34px 28px; background: linear-gradient(transparent, #fff 24%); }
+    .composer { display: flex; align-items: flex-end; gap: 10px; width: min(900px, 100%); margin: 0 auto; padding: 12px 13px 12px 17px; border: 1px solid #dce8f5; border-radius: 18px; background: rgba(255,255,255,.96); box-shadow: var(--shadow); }
+    textarea { flex: 1; min-height: 24px; max-height: 100px; padding: 4px 0; border: 0; outline: 0; resize: none; color: var(--ink); background: transparent; font-size: 14px; line-height: 1.6; }
+    textarea::placeholder { color: #a3b0c0; }
+    .compose-tools { display: flex; align-items: center; gap: 3px; }
+    .tool { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 9px; color: #8292a8; background: transparent; font-size: 17px; }
+    .tool:hover { color: var(--blue); background: #edf5ff; }
+    .send { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; color: #fff; background: var(--blue); font-size: 17px; transition: .18s ease; }
+    .send:hover { transform: translateY(-1px); background: #005cc8; }
+    .hint { margin-top: 9px; color: #aab6c4; font-size: 10px; text-align: center; }
+    .mascot { position: absolute; right: 26px; bottom: 120px; width: 70px; height: 70px; object-fit: contain; opacity: .95; pointer-events: none; filter: drop-shadow(0 10px 12px rgba(54,98,146,.12)); }
+    .toast { position: fixed; right: 25px; top: 76px; padding: 10px 14px; border: 1px solid #dcecff; border-radius: 10px; color: #2866ac; background: #f6fbff; box-shadow: 0 10px 25px rgba(42,91,145,.12); font-size: 12px; opacity: 0; transform: translateY(-8px); transition: .2s ease; pointer-events: none; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @media (max-width: 1100px) { .app { grid-template-columns: 245px 1fr; } .content { width: min(780px, calc(100% - 56px)); } .composer-wrap { padding-right: 25px; padding-left: 25px; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand-row">
+        <div class="brand"><div class="logo">知</div><div>看山助手<small>Zhihu AI Workspace</small></div></div>
+        <button class="icon-btn" title="收起侧栏">☰</button>
+      </div>
+      <button class="new-chat" id="newChat"><span>＋</span><span>新建对话</span></button>
+      <div class="section-title">最近对话</div>
+      <div class="chat-list" id="chatList">
+        <button class="chat active"><span class="dot"></span><span class="label">后端开发学习路线</span><time>刚刚</time></button>
+        <button class="chat"><span class="dot"></span><span class="label">Docker 部署问题排查</span><time>昨天</time></button>
+        <button class="chat"><span class="dot"></span><span class="label">知乎内容运营计划</span><time>周二</time></button>
+        <button class="chat"><span class="dot"></span><span class="label">TypeScript 入门笔记</span><time>周一</time></button>
+      </div>
+      <div class="section-title">快捷入口</div>
+      <div class="chat-list">
+        <button class="chat"><span class="dot" style="background:#42c58a"></span><span class="label">我的收藏</span></button>
+        <button class="chat"><span class="dot" style="background:#ffb84d"></span><span class="label">提示词库</span></button>
+      </div>
+      <div class="sidebar-spacer"></div>
+      <div class="profile"><div class="avatar">LL</div><div><strong>刘同学</strong><span>个人空间 · 设置</span></div><button class="icon-btn" style="margin-left:auto">···</button></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div class="crumb"><strong>后端开发学习路线</strong><span>·</span><span>看山助手</span><span class="badge">Beta</span></div><div class="top-actions"><button class="icon-btn" title="分享">⌁</button><button class="icon-btn" title="更多">···</button></div></header>
+      <section class="content" id="content">
+        <div class="welcome"><img class="welcome-mark" src="assets/kanshan-front.jpg" alt="看山"/><div><p class="eyebrow">HELLO, 看山</p><h1>把一个模糊目标，<br/>变成一条可执行的路。</h1><p class="intro">告诉我你想去哪里、现在在哪里，以及每周有多少时间。我会和你一起拆解问题，给出清晰、可落地的下一步。</p></div></div>
+        <div class="message user"><div class="bubble">我想系统学习后端开发，希望半年内能独立完成一个小型项目。每周大概有 10 小时。</div><div class="mini-avatar">我</div></div>
+        <div class="message"><div class="mini-avatar"><img src="assets/idle.gif" alt="看山"/></div><div class="bubble"><p>目标很清楚，我们可以把半年拆成 4 个阶段。先从一条主线开始：<strong>语言基础 → Web 框架 → 数据库与部署 → 完成项目</strong>。</p><p>我建议第一周先建立开发环境，并用一个最小 API 把请求、业务逻辑和数据库串起来。</p><div class="checklist"><span>本周：完成环境搭建</span><span>下周：实现第一个 API</span><span>第 1 月：掌握工程结构</span><span>第 2 月：完成实战项目</span></div></div></div>
+      </section>
+      <img class="mascot" src="assets/wander.gif" alt="刘看山"/>
+      <div class="composer-wrap"><div class="composer"><button class="tool" title="添加附件">＋</button><textarea id="input" rows="1" placeholder="输入消息，开始和看山对话…"></textarea><div class="compose-tools"><button class="tool" title="语音输入">♩</button><button class="send" id="send" title="发送">↑</button></div></div><div class="hint">看山可能会犯错，请核对重要信息 · 内容仅供学习交流</div></div>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script>
+    const toast = document.querySelector('#toast');
+    function showToast(text) { toast.textContent = text; toast.classList.add('show'); clearTimeout(window.toastTimer); window.toastTimer = setTimeout(() => toast.classList.remove('show'), 1800); }
+    document.querySelectorAll('.chat').forEach(item => item.addEventListener('click', () => { document.querySelectorAll('.chat').forEach(c => c.classList.remove('active')); item.classList.add('active'); showToast('已切换到「' + item.querySelector('.label').textContent + '」'); }));
+    document.querySelector('#newChat').addEventListener('click', () => { document.querySelectorAll('.chat').forEach(c => c.classList.remove('active')); showToast('已创建新对话'); document.querySelector('#input').focus(); });
+    document.querySelector('#send').addEventListener('click', () => { const input = document.querySelector('#input'); if (!input.value.trim()) { showToast('先写点什么吧'); input.focus(); return; } showToast('原型演示：消息已发送'); input.value = ''; });
+    document.querySelector('#input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.querySelector('#send').click(); } });
+  </script>
+</body>
+</html>

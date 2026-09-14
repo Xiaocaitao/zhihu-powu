@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { ZhihuClient } from "../zhihu/client.ts";
-import { safeError } from "../zhihu/errors.ts";
-import { quotaInput, searchGlobalInput, searchZhihuInput } from "../zhihu/schemas.ts";
-import * as s from "../zhihu/api-schemas.ts";
-import type { ApiResult, RequestContext } from "../zhihu/transport.ts";
+import { ZhihuClient } from "../../integrations/zhihu/client.ts";
+import { safeError } from "../../integrations/zhihu/errors.ts";
+import { quotaInput, searchGlobalInput, searchZhihuInput } from "../../integrations/zhihu/schemas.ts";
+import * as s from "../../integrations/zhihu/api-schemas.ts";
+import type { ApiResult, RequestContext } from "../../integrations/zhihu/transport.ts";
 
 export type ToolContext = RequestContext & { confirmed?: boolean };
 type Metadata = { method: "GET" | "POST"; endpoint: string; doc: string; requiresConfirmation?: boolean };
@@ -53,7 +53,7 @@ export function createZhihuTools(client = new ZhihuClient()) {
       s.itemsInput, client.listKnowledgeItems.bind(client), { method: "GET", endpoint: "/api/v1/knowledge/bases/{KnowledgeBaseID}/items", doc: "knowledge_base_items" }),
     defineTool("upload_knowledge_file", "将获授权的单个文件上传到知识库并同步解析。省略知识库 ID 时进入默认库；必须确认文件及目标。超时结果可能未知，先查内容列表，不能直接重传。",
       s.knowledgeUploadInput, client.uploadKnowledgeFile.bind(client), { method: "POST", endpoint: "/api/v1/knowledge/files", doc: "knowledge_file_upload", requiresConfirmation: true }),
-    defineTool("search_knowledge", "检索知识库片段。knowledge_base_ids 与 recall_scopes 至少一个非空；Content 是有序片段数组，不拼成伪造全文。",
+    defineTool("search_knowledge", "检索知乎知识库中的相关片段，为需要资料依据的回答提供上下文，例如根据指定课程资料解释知识点、查找笔记中的内容或对照文档复习。是否检索由你根据问题及已有上下文判断；通用知识讲解或上下文已足够时可直接回答。此工具不会读取应用服务器上尚未同步到知乎的文件；personal 范围指 Access Secret 所属账号，不代表当前网页登录者。knowledge_base_ids 与 recall_scopes 至少一个非空，检索范围须依据用户需求及已知授权信息确定，不编造知识库 ID。Content 是有序片段数组，不拼成伪造全文。",
       s.knowledgeSearchInput, client.searchKnowledge.bind(client), { method: "POST", endpoint: "/api/v1/knowledge/search", doc: "knowledge_search" }),
     defineTool("get_user_contents", "获取当前服务端绑定用户的创作摘要（非全文），支持内容类型、排序和分页。身份由宿主配置，不能用用户 ID 代查。",
       s.contentsInput, client.getUserContents.bind(client), { method: "GET", endpoint: "/api/v1/user/contents", doc: "user_contents" }),

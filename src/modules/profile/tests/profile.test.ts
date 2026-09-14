@@ -25,3 +25,4 @@ test('分区查询只返回指定分区但缺失字段仍按完整画像计算',
 test('完善度查询可隐藏缺失字段', async()=>{const {service}=setup(); const result=await service.getProfileCompletion({ownerId:'u1'},{includeMissingFields:false}); assert.equal(result.missingFields.length,0); assert.equal(result.percentage,0);});
 
 test('目标方向版本冲突会拒绝过期更新', async()=>{const {service}=setup(); const ctx={ownerId:'u1'}; await service.updateUserGoal(ctx,{direction:'前端'}); await assert.rejects(()=>service.updateUserGoal(ctx,{direction:'后端',expectedVersion:9}),/VERSION_CONFLICT/);});
+test('画像事实必须符合字段对应结构', async()=>{const {service}=setup(); await assert.rejects(()=>service.saveProfileFact({ownerId:'u1'} as any,{factType:'major',value:'计算机',source:'user_input'} as any),/INVALID_ARGUMENT/); await assert.rejects(()=>service.saveProfileFact({ownerId:'u1'} as any,{factType:'interest_direction',value:{items:[]},source:'user_input'}),/INVALID_ARGUMENT/);});

@@ -5,12 +5,16 @@ export interface ProfileApplication { getUserProfile(ctx:ProfileContext,input:Ge
 const required=['school','major','grade','learned_content','current_baseline','interest_direction','weekly_time','learning_preference','target_direction'] as const;
 const sectionMap:Record<string,any>={school:'identity',major:'identity',grade:'identity',learned_content:'background',current_baseline:'background',interest_direction:'interests',weekly_time:'availability',learning_preference:'preferences',target_direction:'goals'};
 function validateFact(input: SaveProfileFactInput){
-  if(input.factType !== 'weekly_time' && input.factType !== 'current_baseline' && input.factType !== 'school' && input.factType !== 'major' && input.factType !== 'grade' && input.factType !== 'learned_content' && input.factType !== 'interest_direction' && input.factType !== 'learning_preference') throw new Error('INVALID_ARGUMENT');
-  if(input.source === 'assessment' && !input.evidenceRef) throw new Error('INVALID_ARGUMENT');
-  if(input.factType === 'weekly_time' && (!Number.isFinite((input.value as {hours?:number}).hours) || (input.value as {hours:number}).hours < 0)) throw new Error('INVALID_ARGUMENT');
-  const value=input.value as {text?:string;summary?:string;items?:string[]};
-  if(typeof value.text === 'string' && !value.text.trim() || typeof value.summary === 'string' && !value.summary.trim() || value.items && (!value.items.length || value.items.some(item=>!item.trim()))) throw new Error('INVALID_ARGUMENT');
+  const value=input.value as any;
+  const textFact=['school','major','grade'].includes(input.factType);
+  const listFact=['learned_content','interest_direction','learning_preference'].includes(input.factType);
+  const validText=textFact && value && typeof value==='object' && typeof value.text==='string' && value.text.trim();
+  const validList=listFact && value && typeof value==='object' && Array.isArray(value.items) && value.items.length>0 && value.items.every((item:any)=>typeof item==='string'&&item.trim());
+  const validBaseline=input.factType==='current_baseline' && value && typeof value==='object' && typeof value.summary==='string' && value.summary.trim();
+  const validWeekly=input.factType==='weekly_time' && value && typeof value==='object' && Number.isFinite(value.hours) && value.hours>=0;
+  if(!(validText||validList||validBaseline||validWeekly)||input.source==='assessment'&&!input.evidenceRef) throw new Error('INVALID_ARGUMENT');
 }
+
 export class ProfileService implements ProfileApplication {
  private readonly repo: ProfileRepository;
  constructor(repo: ProfileRepository){ this.repo = repo; }

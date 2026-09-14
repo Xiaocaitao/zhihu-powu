@@ -22,6 +22,3 @@ node --test --experimental-strip-types src/modules/profile/tests/profile.test.ts
 
 - 分区查询仅裁剪返回事实，缺失字段仍按完整画像计算；支持隐藏缺失字段。
 - 目标方向更新支持 expectedVersion 冲突校验；当前单元测试共 10 项通过。
-
-- 本地画像页面补齐已学内容、当前基础和学习偏好字段，前端表单覆盖九项 V1 画像字段。
-- 前端将已学内容、当前基础和学习偏好独立为“学习画像”分区，使用宽幅文本框展示。

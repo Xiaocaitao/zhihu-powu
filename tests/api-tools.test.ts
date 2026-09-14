@@ -3,9 +3,9 @@ import { test } from "node:test";
 import { mkdtemp, writeFile, rm, symlink, open } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createZhihuTools } from "../src/agent/tools.ts";
-import { ZhihuClient, type ClientOptions } from "../src/zhihu/client.ts";
-import { MAX_FILE_BYTES } from "../src/zhihu/uploads.ts";
+import { createZhihuTools } from "../src/agent/tools/zhihu.ts";
+import { ZhihuClient, type ClientOptions } from "../src/integrations/zhihu/client.ts";
+import { MAX_FILE_BYTES } from "../src/integrations/zhihu/uploads.ts";
 
 const clientWith = (fetch: typeof globalThis.fetch, options: ClientOptions = {}) => new ZhihuClient({ accessSecret: "platform-secret", fetch, ...options });
 const getTool = (client: ZhihuClient, name: string) => createZhihuTools(client).find(tool => tool.name === name)!;
@@ -374,3 +374,15 @@ test("long request timeout covers the SSE body and does not retry POST", async (
   if (!result.ok) assert.equal(result.error.code, "TIMEOUT");
   assert.equal(calls, 1);
 });
+
+test("chat SSE parser requires complete and surfaces server errors", async () => {
+  const html = await (await import("node:fs/promises")).readFile(new URL("../public/index.html", import.meta.url), "utf8");
+  const source = html.match(/function parseSse\(.*?\n    function stopActive/s)?.[0]?.replace(/\n    function stopActive[\s\S]*/, "");
+  assert.ok(source);
+  const parseSse = new Function(`${source}; return parseSse;`)();
+  const response = (chunks: string[]) => ({ body: { getReader() { let i=0; return { read: async () => i<chunks.length ? { value: new TextEncoder().encode(chunks[i++]), done:false } : { value:undefined, done:true } }; } } });
+  await assert.rejects(parseSse(response(['event: text_delta\ndata: {"delta":"x"}\n\n']), {}), /连接中途结束/);
+  await assert.doesNotReject(parseSse(response(['event: complete\ndata: {}\n\n']), {}));
+  await assert.rejects(parseSse(response(['event: error\ndata: {"error":"boom"}\n\n']), {}), /boom/);
+});
+
