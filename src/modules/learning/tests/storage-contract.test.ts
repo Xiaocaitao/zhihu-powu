@@ -4,9 +4,11 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const migrationPath = fileURLToPath(new URL("../../../db/migrations/006-learning-normalized.sql", import.meta.url));
+const hardeningPath = fileURLToPath(new URL("../../../db/migrations/007-learning-normalized-hardening.sql", import.meta.url));
 
 test("normalized Learning migration defines the fixed seven-table storage contract", async () => {
   const sql = await readFile(migrationPath, "utf8");
+  const hardening = await readFile(hardeningPath, "utf8");
   for (const table of [
     "learning_plans",
     "learning_stages",
@@ -18,7 +20,8 @@ test("normalized Learning migration defines the fixed seven-table storage contra
   ]) assert.match(sql, new RegExp(`(?:CREATE TABLE IF NOT EXISTS|ALTER TABLE) ${table}`));
   assert.match(sql, /learning_plans_one_active_final/);
   assert.match(sql, /PRIMARY KEY \(owner_id, idempotency_key\)/);
-  assert.match(sql, /learning_adjustment_version_check/);
+  assert.match(hardening, /learning_adjustment_version_check/);
+  assert.match(hardening, /DROP COLUMN IF EXISTS tasks/);
   assert.match(sql, /learning_task_migration_map/);
 });
 
