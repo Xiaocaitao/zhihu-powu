@@ -27,7 +27,7 @@ test("画像读取接口返回 Profile Tool 的真实数据和完善度", async 
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.ok, true);
-  assert.equal(body.profile.facts.length, 0);
+  assert.equal(body.profile, null);
   assert.equal(body.completion.percentage, 0);
 });
 
