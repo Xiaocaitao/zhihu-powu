@@ -1,5 +1,5 @@
 import type { DomainCommand } from "../../contracts/capability.ts";
-import type { CareerActionProgress, CareerCapabilityResult, CareerContext, CareerDashboard, CareerPlan, CompareTargetJobsInput, ConfirmCareerPlanInput, CreateCareerPlanDraftInput, GetCareerPlanInput, GetTargetJobsInput, JobGapAnalysis, ListJobCatalogInput, SaveTargetJobInput, SelectTargetJobInput, TargetJob, AnalyzeJobGapInput } from "./contracts.ts";
+import type { CareerActionProgress, CareerCapabilityResult, CareerContext, CareerDashboard, CareerPlan, CompareTargetJobsInput, ConfirmCareerPlanInput, CreateCareerPlanDraftInput, GetCareerPlanInput, GetTargetJobsInput, JobGapAnalysis, ListJobCatalogInput, SaveTargetJobInput, SelectTargetJobInput, TargetJob, AnalyzeJobGapInput, ListTargetCompaniesInput, SelectTargetCompanyInput, CompareTargetCompaniesInput, GetIndustryTrendsInput, TargetCompany, CompanyComparison, IndustryTrend, GetCareerDashboardInput } from "./contracts.ts";
 export interface CareerApplication {
   getCareerPlan(ctx: CareerContext, input: GetCareerPlanInput): Promise<CareerPlan | null>;
   createCareerPlanDraft(command: DomainCommand<CreateCareerPlanDraftInput>): Promise<CareerCapabilityResult>;
@@ -11,6 +11,10 @@ export interface CareerApplication {
   confirmCareerPlan(command: DomainCommand<ConfirmCareerPlanInput>): Promise<CareerCapabilityResult>;
   analyzeJobGap(command: DomainCommand<AnalyzeJobGapInput>): Promise<CareerCapabilityResult>;
   getLatestJobGapAnalysis(ctx: CareerContext, input: { jobId: string }): Promise<JobGapAnalysis | null>;
-  getCareerDashboard(ctx: CareerContext, input?: { includeLearningProgress?: boolean }): Promise<CareerDashboard>;
+  getCareerDashboard(ctx: CareerContext, input?: GetCareerDashboardInput): Promise<CareerDashboard>;
   compareTargetJobs(ctx: CareerContext, input: CompareTargetJobsInput): Promise<CareerCapabilityResult>;
+  listTargetCompanies(ctx: CareerContext, input: ListTargetCompaniesInput): Promise<{ items: TargetCompany[]; nextCursor: string | null }>;
+  selectTargetCompany(command: DomainCommand<SelectTargetCompanyInput>): Promise<CareerCapabilityResult>;
+  compareTargetCompanies(ctx: CareerContext, input: CompareTargetCompaniesInput): Promise<CareerCapabilityResult<CompanyComparison>>;
+  getIndustryTrends(ctx: CareerContext, input: GetIndustryTrendsInput): Promise<IndustryTrend[]>;
 }

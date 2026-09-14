@@ -27,7 +27,30 @@ test("Career P0：保存不选中、选择/确认版本、幂等和 owner 隔离
 
 test("Career P0：Tool 集合只委托 CareerApplication 并保留确认约束", () => {
   const calls: string[] = []; const app = new Proxy({} as any, { get: (_target, property) => async () => { calls.push(String(property)); return { ok: true, changed: false, domain: "career", status: "read", summary: "ok", data: {} }; } });
-  const tools = createCareerCapabilities(app); assert.deepEqual(tools.map(tool => tool.name), ["get_career_plan", "create_career_plan_draft", "get_target_jobs", "save_target_job", "list_job_catalog", "select_target_job", "analyze_job_gap", "confirm_career_plan", "get_career_dashboard", "compare_target_jobs"]);
+  const tools = createCareerCapabilities(app);
+  const toolNames = tools.map(tool => tool.name);
+  const expectedP0Tools = [
+    "get_career_plan",
+    "create_career_plan_draft",
+    "get_target_jobs",
+    "save_target_job",
+    "list_job_catalog",
+    "select_target_job",
+    "analyze_job_gap",
+    "confirm_career_plan",
+    "get_career_dashboard",
+    "compare_target_jobs",
+  ];
+  const expectedP1Tools = [
+    "list_target_companies",
+    "select_target_company",
+    "compare_target_companies",
+    "get_industry_trends",
+  ];
+  for (const toolName of [...expectedP0Tools, ...expectedP1Tools]) {
+    assert.ok(toolNames.includes(toolName), `missing career tool: ${toolName}`);
+  }
+  assert.equal(toolNames.length, expectedP0Tools.length + expectedP1Tools.length);
   assert.equal(tools.find(tool => tool.name === "select_target_job")?.requiresConfirmation, true); assert.equal(tools.find(tool => tool.name === "confirm_career_plan")?.requiresConfirmation, true); assert.equal(calls.length, 0);
 });
 
@@ -65,3 +88,4 @@ test("Career P0：写接口缺少 Idempotency-Key 时拒绝", async () => {
   const result = await service.saveTargetJob({ context: ctx, payload: { title: "后端工程师", description: "负责 TypeScript、SQL 和平台服务开发。" }, idempotencyKey: "" });
   assert.equal(result.error?.code, "INVALID_ARGUMENT");
 });
+

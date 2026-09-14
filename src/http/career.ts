@@ -4,7 +4,8 @@ import type { CapabilityContext, DomainCommand } from "../contracts/capability.t
 import type { CareerApplication } from "../modules/career/types.ts";
 import {
   analyzeJobGapSchema, compareTargetJobsSchema, confirmCareerPlanSchema, createCareerPlanDraftSchema,
-  getCareerPlanSchema, getTargetJobsSchema, listJobCatalogSchema, saveTargetJobSchema, selectTargetJobSchema,
+  getCareerPlanSchema, getCareerDashboardSchema, getTargetJobsSchema, listJobCatalogSchema, saveTargetJobSchema, selectTargetJobSchema,
+  listTargetCompaniesSchema, selectTargetCompanySchema, compareTargetCompaniesSchema, getIndustryTrendsSchema,
 } from "../modules/career/contracts.ts";
 import type { CareerCapabilityResult } from "../modules/career/contracts.ts";
 import { randomUUID } from "node:crypto";
@@ -52,11 +53,30 @@ export function createCareerRoutes(application: CareerApplication) {
     }),
     route("GET", /^\/api\/career\/dashboard$/, async ({ request, response, context }) => {
       const query = new URL(request.url ?? "/", "http://localhost").searchParams;
-      return send(response, 200, { ok: true, data: await application.getCareerDashboard(context, { includeLearningProgress: parseBooleanQuery(query, "includeLearningProgress") ?? true }) });
+      const input = getCareerDashboardSchema.parse({ trendPeriodDays: query.has("trendPeriodDays") ? Number(query.get("trendPeriodDays")) : undefined, includeCompanies: parseBooleanQuery(query, "includeCompanies"), includeLearningProgress: parseBooleanQuery(query, "includeLearningProgress") ?? true });
+      return send(response, 200, { ok: true, data: await application.getCareerDashboard(context, input) });
     }),
     route("POST", /^\/api\/career\/jobs\/compare$/, async ({ request, response, context }) => {
       const payload = compareTargetJobsSchema.parse(await readJson(request));
       return sendResult(response, await application.compareTargetJobs(context, payload));
+    }),
+    route("GET", /^\/api\/career\/companies$/, async ({ request, response, context }) => {
+      return send(response, 200, { ok: true, data: await application.listTargetCompanies(context, listTargetCompaniesSchema.parse(companyQueryInput(request))) });
+    }),
+    route("POST", /^\/api\/career\/plans\/(?<id>[^/]+)\/company$/, async ({ request, response, params, context }) => {
+      const body = await readJson(request);
+      const payload = selectTargetCompanySchema.parse({ planId: params.id, companyId: body.companyId, expectedVersion: body.expectedVersion });
+      return sendResult(response, await application.selectTargetCompany(command(context, payload, request)));
+    }),
+    route("POST", /^\/api\/career\/companies\/compare$/, async ({ request, response, context }) => {
+      const payload = compareTargetCompaniesSchema.parse(await readJson(request));
+      return sendResult(response, await application.compareTargetCompanies(context, payload));
+    }),
+    route("GET", /^\/api\/career\/trends$/, async ({ request, response, context }) => {
+      const query = new URL(request.url ?? "/", "http://localhost").searchParams;
+      const directionCodes = query.getAll("directionCode");
+      const input = getIndustryTrendsSchema.parse({ directionCodes: directionCodes.length ? directionCodes : undefined, periodDays: query.has("periodDays") ? Number(query.get("periodDays")) : undefined });
+      return send(response, 200, { ok: true, data: await application.getIndustryTrends(context, input) });
     }),
   ];
 }
@@ -73,6 +93,11 @@ function parseBooleanQuery(query: URLSearchParams, name: string): boolean | unde
   if (value === "true") return true;
   if (value === "false") return false;
   throw new Error("invalid_request");
+}
+
+function companyQueryInput(request: IncomingMessage) {
+  const query = new URL(request.url ?? "/", "http://localhost").searchParams;
+  return { keyword: query.get("keyword") ?? undefined, directionCode: query.get("directionCode") ?? undefined, city: query.get("city") ?? undefined, limit: query.has("limit") ? Number(query.get("limit")) : undefined, cursor: query.get("cursor") ?? undefined };
 }
 
 function queryInput(request: IncomingMessage) {

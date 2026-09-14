@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { CapabilityErrorCode, DomainCommand } from "../../contracts/capability.ts";
 import type { CareerApplication } from "./types.ts";
-import type { CareerAction, CareerActionProgress, CareerCapabilityResult, CareerContext, CareerDashboard, CareerGapItem, CareerPlan, CreateCareerPlanDraftInput, EvidenceQuery, GetCareerPlanInput, GetTargetJobsInput, JobGapAnalysis, LearningProgressQuery, ListJobCatalogInput, ProfileQuery, SaveTargetJobInput, SelectTargetJobInput, TargetJob, AnalyzeJobGapInput, ConfirmCareerPlanInput, CompareTargetJobsInput, SkillEvidenceSnapshot } from "./contracts.ts";
+import type { CareerAction, CareerActionProgress, CareerCapabilityResult, CareerContext, CareerDashboard, CareerGapItem, CareerPlan, CreateCareerPlanDraftInput, EvidenceQuery, GetCareerPlanInput, GetTargetJobsInput, JobGapAnalysis, LearningProgressQuery, ListJobCatalogInput, ProfileQuery, SaveTargetJobInput, SelectTargetJobInput, TargetJob, AnalyzeJobGapInput, ConfirmCareerPlanInput, CompareTargetJobsInput, SkillEvidenceSnapshot, ListTargetCompaniesInput, SelectTargetCompanyInput, CompareTargetCompaniesInput, GetIndustryTrendsInput, TargetCompany, CompanyComparison, IndustryTrend, GetCareerDashboardInput } from "./contracts.ts";
 import type { CareerRepository } from "./repository.ts";
 import { emptyCareerJob } from "./repository.ts";
 
@@ -34,8 +34,9 @@ export class CareerService implements CareerApplication {
       const current = await this.repo.getPlan(command.context.ownerId, "draft");
       if (current) return this.result({ plan: current }, "已有职业规划草稿", false, current.id, current.version, "draft_created");
       if (command.payload.targetJobId && !(await this.repo.getJob(command.context.ownerId, command.payload.targetJobId))) return this.reject("目标岗位不存在", "NOT_FOUND");
+      if (command.payload.targetCompanyId && !(await this.repo.getCompany(command.context.ownerId, command.payload.targetCompanyId))) return this.reject("目标企业不存在", "NOT_FOUND");
       const now = new Date().toISOString();
-      const plan: CareerPlan = { id: randomUUID(), ownerId: command.context.ownerId, status: "draft", version: 1, directionCodes: command.payload.directionCodes ?? profileForDraft.directionHints.slice(0, 3), targetJobId: command.payload.targetJobId, targetCompanyName: command.payload.targetCompanyName, targetCity: command.payload.targetCity, targetSalaryText: command.payload.targetSalaryText, rationale: command.payload.userNotes ?? profileForDraft.goalText, updatedAt: now };
+      const plan: CareerPlan = { id: randomUUID(), ownerId: command.context.ownerId, status: "draft", version: 1, directionCodes: command.payload.directionCodes ?? profileForDraft.directionHints.slice(0, 3), targetJobId: command.payload.targetJobId, targetCompanyId: command.payload.targetCompanyId, targetCompanyName: command.payload.targetCompanyName, targetCity: command.payload.targetCity, targetSalaryText: command.payload.targetSalaryText, rationale: command.payload.userNotes ?? profileForDraft.goalText, updatedAt: now };
       if (!await this.repo.savePlan(plan)) return this.reject("职业规划版本已变化", "VERSION_CONFLICT");
       return this.result({ plan }, "职业规划草稿已创建", true, plan.id, plan.version, "draft_created");
     });
@@ -119,7 +120,7 @@ export class CareerService implements CareerApplication {
 
   async getLatestJobGapAnalysis(ctx: CareerContext, input: { jobId: string }) { return this.repo.getLatestGap(ctx.ownerId, input.jobId); }
 
-  async getCareerDashboard(ctx: CareerContext, input: { includeLearningProgress?: boolean } = {}): Promise<CareerDashboard> {
+  async getCareerDashboard(ctx: CareerContext, input: GetCareerDashboardInput = {}): Promise<CareerDashboard> {
     const plan = await this.repo.getPlan(ctx.ownerId);
     const activeJob = plan?.targetJobId ? await this.repo.getJob(ctx.ownerId, plan.targetJobId) : null;
     const latestGapAnalysis = activeJob ? await this.repo.getLatestGap(ctx.ownerId, activeJob.id) : null;
@@ -134,7 +135,55 @@ export class CareerService implements CareerApplication {
         // Learning is an optional enrichment. Keep the Career dashboard usable.
       }
     }
-    return { plan, activeJob, latestGapAnalysis, recommendedActions, refreshedAt: new Date().toISOString() };
+    const targetCompanies = input.includeCompanies === false ? [] : await this.listTargetCompanies(ctx, { directionCode: plan?.directionCodes[0], limit: 20 }).then(result => result.items.map(company => ({ ...company, selectionStatus: company.id === plan?.targetCompanyId ? "selected" as const : "candidate" as const })));
+    const trends = await this.getIndustryTrends(ctx, { directionCodes: plan?.directionCodes, periodDays: input.trendPeriodDays ?? 90 });
+    return { plan, activeJob, latestGapAnalysis, targetCompanies, trends, recommendedActions, refreshedAt: new Date().toISOString() };
+  }
+
+  async listTargetCompanies(ctx: CareerContext, input: ListTargetCompaniesInput) {
+    const plan = await this.repo.getPlan(ctx.ownerId);
+    const items = await this.repo.listCompanies(ctx.ownerId, input);
+    return { items: items.map(company => ({ ...company, selectionStatus: company.id === plan?.targetCompanyId ? "selected" as const : "candidate" as const })), nextCursor: null };
+  }
+
+  async selectTargetCompany(command: DomainCommand<SelectTargetCompanyInput>): Promise<CareerCapabilityResult> {
+    return this.write(command, "select_target_company", async () => {
+      const plan = await this.repo.getPlan(command.context.ownerId);
+      const company = await this.repo.getCompany(command.context.ownerId, command.payload.companyId);
+      if (!plan || plan.id !== command.payload.planId) return this.reject("职业规划不存在", "NOT_FOUND");
+      if (!company) return this.reject("目标企业不存在", "NOT_FOUND");
+      if (plan.version !== command.payload.expectedVersion) return this.reject("职业规划版本已变化", "VERSION_CONFLICT");
+      if (plan.status === "archived") return this.reject("当前规划不可修改", "INVALID_STATE");
+      const next = { ...plan, targetCompanyId: company.id, targetCompanyName: company.name, targetCity: company.city ?? plan.targetCity, version: plan.version + 1, updatedAt: new Date().toISOString() };
+      if (!await this.repo.savePlan(next, plan.version)) return this.reject("职业规划版本已变化", "VERSION_CONFLICT");
+      return this.result({ plan: next, company: { ...company, selectionStatus: "selected" as const } }, "目标企业已更新", true, plan.id, next.version, "applied");
+    });
+  }
+
+  async compareTargetCompanies(ctx: CareerContext, input: CompareTargetCompaniesInput): Promise<CareerCapabilityResult<CompanyComparison>> {
+    const leftCompany = await this.repo.getCompany(ctx.ownerId, input.leftCompanyId);
+    const rightCompany = await this.repo.getCompany(ctx.ownerId, input.rightCompanyId);
+    if (!leftCompany || !rightCompany) return this.reject("企业不存在", "NOT_FOUND");
+    if (leftCompany.id === rightCompany.id) return this.reject("需要选择两个不同企业", "INVALID_ARGUMENT");
+    const leftJobs = (await Promise.all(leftCompany.relatedJobIds.map(jobId => this.repo.getJob(ctx.ownerId, jobId)))).filter((job): job is TargetJob => Boolean(job));
+    const rightJobs = (await Promise.all(rightCompany.relatedJobIds.map(jobId => this.repo.getJob(ctx.ownerId, jobId)))).filter((job): job is TargetJob => Boolean(job));
+    const comparableJobPairs: CompanyComparison["comparableJobPairs"] = [];
+    for (const left of leftJobs) {
+      const right = rightJobs.find(candidate => candidate.directionCode === left.directionCode) ?? rightJobs[0];
+      if (!right) continue;
+      const rightByCode = new Map(right.requirements.map(item => [item.skillCode, item]));
+      const leftByCode = new Map(left.requirements.map(item => [item.skillCode, item]));
+      comparableJobPairs.push({ leftJobId: left.id, rightJobId: right.id, comparison: { left, right, commonSkills: left.requirements.filter(item => rightByCode.has(item.skillCode)), leftOnlySkills: left.requirements.filter(item => !rightByCode.has(item.skillCode)), rightOnlySkills: right.requirements.filter(item => !leftByCode.has(item.skillCode)) } });
+    }
+    const data: CompanyComparison = { leftCompany: { ...leftCompany, selectionStatus: "comparable" }, rightCompany: { ...rightCompany, selectionStatus: "comparable" }, comparableJobPairs, summary: `已比较${leftCompany.name}与${rightCompany.name}的${comparableJobPairs.length}组关联岗位。` };
+    return this.result(data, "已完成企业对比");
+  }
+
+  async getIndustryTrends(_ctx: CareerContext, input: GetIndustryTrendsInput): Promise<IndustryTrend[]> {
+    return this.repo.listTrends({
+      ...input,
+      directionCodes: input.directionCodes?.length ? input.directionCodes : undefined,
+    });
   }
 
   async compareTargetJobs(ctx: CareerContext, input: CompareTargetJobsInput): Promise<CareerCapabilityResult> {
