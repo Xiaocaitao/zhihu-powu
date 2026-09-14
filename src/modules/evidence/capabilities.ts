@@ -10,6 +10,7 @@ const evidenceSchema = z.object({ evidenceIds: z.array(id).min(1).max(20), skill
 const reviewSchema = z.object({ from: z.string().datetime({ offset: true }), to: z.string().datetime({ offset: true }) }).strict();
 const interviewTarget = z.object({ kind: z.enum(["job", "skills", "project"]), id }).strict();
 const interviewId = z.object({ interviewId: id }).strict();
+const feedbackSchema = z.object({ interviewId: id, questionId: id.optional() }).strict();
 const answerSchema = z.object({ interviewId: id, questionId: id, answer: z.string().trim().min(1).max(20000) }).strict();
 const updateSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("amend"), recordId: id, changes: z.object({ title: z.string().trim().min(1).max(200).optional(), content: z.string().trim().min(1).max(20000).optional(), occurredAt: z.string().datetime({ offset: true }).optional(), durationMinutes: z.number().int().min(0).nullable().optional(), taskId: id.nullable().optional(), skillIds: z.array(id).max(20).optional() }).strict().refine(value => Object.keys(value).length > 0, "至少提供一项修正") }).strict(),
@@ -30,7 +31,7 @@ export function createEvidenceCapabilities(service: EvidenceService | EvidenceAp
     { name: "get_interview_session", description: "读取面试会话", inputSchema: interviewId, execute: validated(interviewId, (ctx, input) => service.getInterviewSession(ctx, input.interviewId)) },
     { name: "submit_interview_answer", description: "提交面试回答", inputSchema: answerSchema, execute: validated(answerSchema, (ctx, input) => service.submitInterviewAnswer(ctx, input.interviewId, input.questionId, input.answer)) },
     { name: "finish_interview", description: "结束模拟面试", inputSchema: interviewId, execute: validated(interviewId, (ctx, input) => service.finishInterview(ctx, input.interviewId)) },
-    { name: "get_interview_feedback", description: "读取面试反馈", inputSchema: interviewId, execute: validated(interviewId, (ctx, input) => service.getInterviewFeedback(ctx, input.interviewId)) },
+    { name: "get_interview_feedback", description: "读取面试反馈", inputSchema: feedbackSchema, execute: validated(feedbackSchema, (ctx, input) => service.getInterviewFeedback(ctx, input.interviewId)) },
     { name: "get_interview_records", description: "查询历史面试", inputSchema: z.object({}).strict(), execute: (ctx: EvidenceContext) => service.getInterviewRecords(ctx) },
   ];
 }
