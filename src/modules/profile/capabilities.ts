@@ -2,7 +2,7 @@ import type { CapabilityContext, DomainCapability, DomainCommand } from '../../c
 import { getProfileCompletionInputSchema, getUserProfileInputSchema, saveProfileFactInputSchema, updateUserGoalInputSchema } from './contracts.ts';
 import type { ProfileApplication } from './service.ts';
 import type { SaveProfileFactInput, UpdateUserGoalInput, LegacyUpdateUserGoalInput } from './contracts.ts';
-const command = <T extends { expectedVersion?: number }>(ctx:CapabilityContext,payload:T):DomainCommand<any> => { const { expectedVersion, ...body } = payload; return { context:ctx, payload:body, expectedVersion, idempotencyKey:ctx.operationKey }; };
+const command = <T>(ctx:CapabilityContext,payload:T):DomainCommand<T> => ({context:ctx,payload,idempotencyKey:ctx.operationKey});
 export function createProfileCapabilities(service:ProfileApplication):DomainCapability[]{
  const read=(data:unknown)=>({ok:true,changed:false,domain:'profile',status:'read' as const,summary:'Profile 查询完成',data});
  return [
@@ -12,5 +12,4 @@ export function createProfileCapabilities(service:ProfileApplication):DomainCapa
   {name:'update_user_goal',description:'更新用户目标方向',inputSchema:updateUserGoalInputSchema,execute:async(ctx,input)=>{ const parsed=updateUserGoalInputSchema.parse(input); const normalized='value' in parsed ? parsed : { goalType:'target_direction' as const, value:{direction:parsed.direction}, expectedVersion:parsed.expectedVersion }; return service.updateUserGoal(command<UpdateUserGoalInput>(ctx,normalized)); }},
  ];
 }
-
 
