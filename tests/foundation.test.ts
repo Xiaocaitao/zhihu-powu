@@ -39,6 +39,7 @@ test("growth prompt maps an explicit skills write to learned_content profile fac
   assert.match(prompt, /factType 固定为 learned_content/);
   assert.match(prompt, /value 使用 \{ items: string\[\] \}/);
   assert.match(prompt, /不要把单纯的技能清单或自我描述改走 Evidence 的 record_learning_evidence/);
+  assert.match(prompt, /此类请求信息足够时必须直接调用一次 record_learning_evidence/);
 });
 
 test("growth prompt keeps first learning plans in trial mode", async () => {
