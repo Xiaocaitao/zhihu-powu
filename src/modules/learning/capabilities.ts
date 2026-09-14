@@ -1,7 +1,15 @@
 import type { CapabilityContext, DomainCapability, DomainCommand } from "../../contracts/capability.ts";
 import { adjustPlanSchema, confirmPlanSchema, createPlanSchema, feedbackSchema, updateTaskSchema } from "./contracts.ts";
 import type { LearningApplication } from "./types.ts";
-const command = <T>(ctx: CapabilityContext, payload: T): DomainCommand<T> => ({ context: ctx, payload, idempotencyKey: ctx.operationKey });
+type CommandPayload<T> = T extends { expectedVersion?: number } ? Omit<T, "expectedVersion"> : T;
+const command = <T>(ctx: CapabilityContext, payload: T): DomainCommand<CommandPayload<T>> => {
+  if (!isRecord(payload) || typeof payload.expectedVersion !== "number") {
+    return { context: ctx, payload: payload as CommandPayload<T>, idempotencyKey: ctx.operationKey };
+  }
+  const { expectedVersion, ...body } = payload;
+  return { context: ctx, payload: body as CommandPayload<T>, expectedVersion, idempotencyKey: ctx.operationKey };
+};
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const read = <T>(data: T, summary: string) => ({ ok: true, changed: false, domain: "learning" as const, status: "read" as const, summary, data });
 export function createLearningCapabilities(service: LearningApplication): DomainCapability[] { return [
   { name: "get_active_learning_plan", description: "读取当前有效学习计划、阶段和任务。", inputSchema: { type: "object", properties: { includeTasks: { type: "boolean" } }, additionalProperties: false }, execute: async (ctx, input) => read(await service.getActivePlan(ctx, (input ?? {}) as { includeTasks?: boolean }), "已读取当前学习计划") },
