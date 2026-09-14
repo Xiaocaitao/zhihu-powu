@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -15,11 +15,19 @@ import type { CapabilityRegistry } from "./agent/tools/registry.ts";
 import type { PromptContext } from "./agent/prompts/system.ts";
 import { PostgresKnowledgeStore } from "./modules/knowledge/postgres-repository.ts";
 import type { KnowledgeStore, KnowledgeUpload } from "./modules/knowledge/contracts.ts";
+import { createDefaultCapabilityRegistry } from "./app/composition-root.ts";
+import { PostgresProfileRepository } from "./modules/profile/postgres-repository.ts";
+import { PostgresCareerRepository } from "./modules/career/postgres-repository.ts";
+import { PostgresLearningRepository } from "./modules/learning/postgres-repository.ts";
+import { PostgresEvidenceRepository } from "./modules/evidence/postgres-repository.ts";
+import { EvidenceApplication } from "./modules/evidence/application.ts";
+import { EvidenceService } from "./modules/evidence/service.ts";
 
 type Options = { chatService?: ChatService; knowledgeStore?: KnowledgeStore; readiness?: () => Promise<void>; applicationRoutes?: ApplicationRoute[]; oauth?: ZhihuOAuthProvider; capabilityRegistry?: CapabilityRegistry; promptContext?: PromptContext };
-const owners = new Map<string, string>();
 type OAuthSession = { state?: string; stateVerified?: boolean; accessToken?: string; expiresAt?: number; profile?: ZhihuOAuthProfile; error?: { code: string; message: string } };
 const oauthSessions = new Map<string, OAuthSession>();
+const oauthCookieName = "powu_auth";
+export function resetOAuthSessionsForTests() { oauthSessions.clear(); }
 export function createPowuServer(options: Options = {}): Server {
   const oauth = options.oauth ?? createZhihuOAuth();
   return createServer(async (req, res) => {
@@ -30,7 +38,7 @@ export function createPowuServer(options: Options = {}): Server {
     if (path.startsWith("/assets/") && req.method === "GET") { const name = path.slice(8); if (!name || name.includes("..") || name.includes("\\")) return send(res, 404, { error: "not_found" }); const types: Record<string,string> = { ".js":"text/javascript; charset=utf-8", ".gif":"image/gif", ".jpg":"image/jpeg", ".png":"image/png" }; return serve(res, `../public/assets/${name}`, types[name.slice(name.lastIndexOf(".")).toLowerCase()] ?? "application/octet-stream"); }
     if (path === "/api/auth/zhihu/status" && req.method === "GET") {
       const session = oauthSession(req, res);
-      const authorized = Boolean(session.accessToken && session.expiresAt && session.expiresAt > Date.now() && session.profile);
+      const authorized = Boolean(session.expiresAt && session.expiresAt > Date.now() && session.profile);
       return send(res, 200, { ok: true, authorized, profile: authorized ? session.profile : null, uid: authorized ? session.profile?.uid : null, state_verified: session.stateVerified ?? null, error: session.error ?? null });
     }
     if (path === "/auth/zhihu/start" && req.method === "GET") {
@@ -61,6 +69,7 @@ export function createPowuServer(options: Options = {}): Server {
         session.profile = profile;
         session.state = undefined;
         session.error = undefined;
+        appendCookie(res, serializeOAuthCookie(session));
         return redirect(res, "/?oauth=success", res.getHeader("set-cookie"));
       } catch (error) {
         session.accessToken = undefined;
@@ -68,12 +77,14 @@ export function createPowuServer(options: Options = {}): Server {
         session.profile = undefined;
         session.state = undefined;
         session.error = oauthError(error);
+        appendCookie(res, expireOAuthCookie());
         return redirect(res, "/?oauth=error", res.getHeader("set-cookie"));
       }
     }
     if (path === "/api/auth/zhihu/logout" && req.method === "POST") {
       const session = oauthSession(req, res);
       session.accessToken = undefined; session.expiresAt = undefined; session.profile = undefined; session.state = undefined; session.stateVerified = undefined; session.error = undefined;
+      appendCookie(res, expireOAuthCookie());
       return send(res, 200, { ok: true });
     }
     if (path === "/api/knowledge/files" && req.method === "GET") {
@@ -89,6 +100,60 @@ export function createPowuServer(options: Options = {}): Server {
         const files = await Promise.all(payload.files.map(file => options.knowledgeStore!.save(authenticatedOwner(req, res), file)));
         return send(res, 201, { files });
       } catch (error) { return send(res, error instanceof ChatError ? error.status : 400, { ok: false, error: error instanceof ChatError ? error.message : "invalid_upload" }); }
+    }
+    if (path === "/api/growth/profile" && req.method === "GET") {
+      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "growth_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      const profile = options.capabilityRegistry.list().find(capability => capability.name === "get_user_profile");
+      const completion = options.capabilityRegistry.list().find(capability => capability.name === "get_profile_completion");
+      if (!profile || !completion) return send(res, 503, { ok: false, error: "profile_unavailable" });
+      try {
+        const [profileResult, completionResult] = await Promise.all([profile.execute(context, {}), completion.execute(context, {})]);
+        if (!profileResult.ok || !completionResult.ok) return send(res, 502, { ok: false, error: "profile_read_failed" });
+        return send(res, 200, { ok: true, profile: profileResult.data, completion: completionResult.data });
+      } catch (error) { console.error("profile read failed", error); return send(res, 502, { ok: false, error: "profile_read_failed" }); }
+    }
+    if (path === "/api/growth/career" && req.method === "GET") {
+      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "career_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      const plan = options.capabilityRegistry.list().find(capability => capability.name === "get_career_plan");
+      const jobs = options.capabilityRegistry.list().find(capability => capability.name === "get_target_jobs");
+      if (!plan || !jobs) return send(res, 503, { ok: false, error: "career_unavailable" });
+      try {
+        const [planResult, jobsResult] = await Promise.all([plan.execute(context, {}), jobs.execute(context, { limit: 50 })]);
+        if (!planResult.ok || !jobsResult.ok) return send(res, 502, { ok: false, error: "career_read_failed" });
+        return send(res, 200, { ok: true, plan: planResult.data ?? null, jobs: (jobsResult.data as { items?: unknown[] } | undefined)?.items ?? [] });
+      } catch (error) { console.error("career read failed", error); return send(res, 502, { ok: false, error: "career_read_failed" }); }
+    }
+    if (path === "/api/growth/learning" && req.method === "GET") {
+      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "learning_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      const planCapability = options.capabilityRegistry.list().find(capability => capability.name === "get_active_learning_plan");
+      const tasksCapability = options.capabilityRegistry.list().find(capability => capability.name === "get_today_learning_tasks");
+      if (!planCapability || !tasksCapability) return send(res, 503, { ok: false, error: "learning_unavailable" });
+      try {
+        const [planResult, tasksResult] = await Promise.all([planCapability.execute(context, { includeTasks: true }), tasksCapability.execute(context, {})]);
+        if (!planResult.ok || !tasksResult.ok) return send(res, 502, { ok: false, error: "learning_read_failed" });
+        return send(res, 200, { ok: true, plan: planResult.data ?? null, tasks: tasksResult.data ?? [] });
+      } catch (error) { console.error("learning read failed", error); return send(res, 502, { ok: false, error: "learning_read_failed" }); }
+    }
+    if (path === "/api/growth/records" && req.method === "GET") {
+      const capability = options.capabilityRegistry?.list().find(item => item.name === "get_learning_records");
+      if (!capability) return send(res, 503, { ok: false, error: "records_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      try {
+        const result = await capability.execute(context, {});
+        if (!result.ok) return send(res, 502, { ok: false, error: "records_read_failed" });
+        return send(res, 200, { ok: true, items: (result.data as { items?: unknown[] } | undefined)?.items ?? [] });
+      } catch (error) { console.error("records read failed", error); return send(res, 502, { ok: false, error: "records_read_failed" }); }
+    }
+    if (path === "/api/growth/interviews" && req.method === "GET") {
+      if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "interview_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      const records = options.capabilityRegistry.list().find(capability => capability.name === "get_interview_records");
+      if (!records) return send(res, 503, { ok: false, error: "interview_unavailable" });
+      try { const result = await records.execute(context, {}); if (!result.ok) return send(res, 502, { ok: false, error: "interview_read_failed" }); const data = result.data as { items?: unknown[]; session?: unknown } | undefined; return send(res, 200, { ok: true, items: data?.items ?? [], session: data?.session ?? null }); }
+      catch (error) { console.error("interview read failed", error); return send(res, 502, { ok: false, error: "interview_read_failed" }); }
     }
     const knowledgeFile = path.match(/^\/api\/knowledge\/files\/([0-9a-f-]+)$/i)?.[1];
     if (knowledgeFile && req.method === "GET") {
@@ -159,24 +224,54 @@ export function createPowuServer(options: Options = {}): Server {
 function oauthSession(req: IncomingMessage, res: ServerResponse) {
   const owner = cookieOwner(req, res);
   let session = oauthSessions.get(owner);
-  if (!session) { session = {}; oauthSessions.set(owner, session); }
+  if (!session) { session = readOAuthCookie(req) ?? {}; oauthSessions.set(owner, session); }
   return session;
 }
 function authenticatedOwner(req: IncomingMessage, res: ServerResponse) {
   const anonymousOwner = cookieOwner(req, res);
-  const session = oauthSessions.get(anonymousOwner);
-  if (session?.accessToken && session.expiresAt && session.expiresAt > Date.now() && session.profile?.uid) return `zhihu:${session.profile.uid}`;
+  const session = oauthSessions.get(anonymousOwner) ?? readOAuthCookie(req);
+  if (session?.expiresAt && session.expiresAt > Date.now() && session.profile?.uid) return `zhihu:${session.profile.uid}`;
   return anonymousOwner;
+}
+function oauthSecret() { return process.env.OAUTH_SESSION_SECRET?.trim() || process.env.ZHIHU_OAUTH_APP_KEY?.trim() || "powu-development-oauth-session-secret"; }
+function serializeOAuthCookie(session: OAuthSession) {
+  if (!session.profile?.uid || !session.expiresAt) return expireOAuthCookie();
+  const { uid, hash_id, fullname, gender, headline, description, avatar_path, url } = session.profile;
+  const profile = { uid, hash_id, fullname, gender, headline, description, avatar_path, url };
+  const payload = Buffer.from(JSON.stringify({ expiresAt: session.expiresAt, profile })).toString("base64url");
+  const signature = createHmac("sha256", oauthSecret()).update(payload).digest("base64url");
+  const secure = process.env.COOKIE_SECURE === "true" || (process.env.NODE_ENV === "production" && process.env.COOKIE_SECURE !== "false");
+  return `${oauthCookieName}=${payload}.${signature}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000))}${secure ? "; Secure" : ""}`;
+}
+function expireOAuthCookie() { return `${oauthCookieName}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`; }
+function readOAuthCookie(req: IncomingMessage): OAuthSession | undefined {
+  const raw = req.headers.cookie?.match(new RegExp(`(?:^|; )${oauthCookieName}=([^;]+)`))?.[1];
+  if (!raw) return undefined;
+  const [payload, signature] = raw.split(".");
+  if (!payload || !signature) return undefined;
+  const expected = createHmac("sha256", oauthSecret()).update(payload).digest("base64url");
+  if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString()) as OAuthSession;
+    return parsed.expiresAt && parsed.expiresAt > Date.now() && parsed.profile?.uid ? parsed : undefined;
+  } catch { return undefined; }
+}
+function appendCookie(res: ServerResponse, cookie: string) {
+  const current = res.getHeader("set-cookie");
+  const values = Array.isArray(current) ? current.map(String) : typeof current === "string" ? [current] : [];
+  res.setHeader("set-cookie", [...values, cookie]);
 }
 function sameSecret(a: string, b: string) { return a.length === b.length && Buffer.from(a).equals(Buffer.from(b)); }
 function oauthError(error: unknown) { return { code: error instanceof Error && "code" in error ? String((error as { code?: unknown }).code) : "OAUTH_FAILED", message: error instanceof Error ? error.message : "知乎 OAuth 登录失败，请重试。" }; }
 function redirect(res: ServerResponse, location: string, cookie: string | string[] | number | undefined) { const headers: Record<string, string | string[]> = { location }; if (typeof cookie === "string" || Array.isArray(cookie)) headers["set-cookie"] = cookie; res.writeHead(302, headers); res.end(); }
 function cookieOwner(req: IncomingMessage, res: ServerResponse) {
   const token = req.headers.cookie?.match(/(?:^|; )(?:__Host-)?powu_owner=([^;]+)/)?.[1];
-  if (token && owners.has(token)) return owners.get(token)!;
-  const key = randomBytes(32).toString("base64url");
-  const owner = randomBytes(24).toString("base64url");
-  owners.set(key, owner);
+  // The cookie must resolve to the same owner after an ECS restart. An
+  // in-memory token -> random-owner map made every restart look like a new
+  // user, hiding existing profile and chat data. Hash the bearer token so the
+  // database never stores the raw cookie while keeping the mapping stable.
+  const key = token ?? randomBytes(32).toString("base64url");
+  const owner = `anonymous:${createHash("sha256").update(key).digest("hex")}`;
   const secure = process.env.COOKIE_SECURE === "true" || (process.env.NODE_ENV === "production" && process.env.COOKIE_SECURE !== "false");
   const name = secure ? "__Host-powu_owner" : "powu_owner";
   res.setHeader("set-cookie", `${name}=${key}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secure ? "; Secure" : ""}`);
@@ -208,5 +303,5 @@ async function readMultipart(req: IncomingMessage): Promise<{ fields: Record<str
   if (!Object.keys(fields).length && !files.length) throw new ChatError("body_required", 400);
   return { fields, files };
 }
-export async function startPowuServer(options: Options = {}): Promise<Server> { const pool = createPool(); await ensureSchema(pool); const service = options.chatService ?? new ChatService(new PostgresChatStore(pool), new PiChatRuntime({ capabilityRegistry: options.capabilityRegistry, promptContext: options.promptContext })); const server = createPowuServer({ ...options, chatService: service, knowledgeStore: options.knowledgeStore ?? new PostgresKnowledgeStore(pool), readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }) }); server.once("close", () => void pool.end()); await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); }); }); return server; }
+export async function startPowuServer(options: Options = {}): Promise<Server> { const pool = createPool(); await ensureSchema(pool); const evidence = new EvidenceApplication(new EvidenceService(), new PostgresEvidenceRepository(pool)); const capabilityRegistry = options.capabilityRegistry ?? createDefaultCapabilityRegistry({ profile: new PostgresProfileRepository(pool), evidence, career: new PostgresCareerRepository(pool), learning: new PostgresLearningRepository(pool) }); const service = options.chatService ?? new ChatService(new PostgresChatStore(pool), new PiChatRuntime({ capabilityRegistry, promptContext: options.promptContext })); const server = createPowuServer({ ...options, capabilityRegistry, chatService: service, knowledgeStore: options.knowledgeStore ?? new PostgresKnowledgeStore(pool), readiness: options.readiness ?? (async () => { await pool.query("SELECT 1"); }) }); server.once("close", () => void pool.end()); await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(Number(process.env.PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => { server.removeListener("error", reject); resolve(); }); }); return server; }
 if (process.argv[1] === fileURLToPath(import.meta.url)) startPowuServer().catch(error => { console.error(error); process.exitCode = 1; });
