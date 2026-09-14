@@ -1,147 +1,198 @@
-# 破雾 · 知乎开放平台 Tools
+# 破雾：面向计算机专业学生的成长导航
 
-对照 2026-08-31 官方文档，提供 **21 个 TypeScript 工具**。Pi runtime 自主编排模型与工具，PostgreSQL 保存通用会话事件。
+「破雾」把知乎上的行业经验、学习建议和岗位信息，结合用户自己的专业背景、学习基础、时间和目标，转化成一条有依据、能执行、会调整的成长路线。
 
-完整 endpoint、参数与限制见 [API 覆盖清单](docs/api-tools.md)。原始产品需求见 [PRD](docs/PRD.md)。
+它解决的是学生在“学校课程”和“真实行业”之间看不清、接不上、走不下去的问题：不知道计算机专业对应哪些岗位，不知道资料如何取舍，也无法把学习过程沉淀成可信的项目和能力证据。
 
-当前分层和需求接入规则见 [云 Agent 助手架构](docs/architecture-refactor-plan.md)。
+产品最终提供四类结果：
 
-## 工具分组
+- **行业认知**：理解不同岗位的真实工作、基础要求和实践场景；
+- **能力地图**：知道目标岗位需要哪些能力，以及自己目前有哪些证据；
+- **近期学习计划**：得到能在一到两周内执行和验证的任务；
+- **成长证据**：记录学习活动、项目成果、复盘和模拟面试反馈。
 
-| 分组 | 工具 |
-|---|---|
-| 公共内容与额度（5） | `search_zhihu`、`search_global`、`get_zhihu_quota`、`get_zhihu_hot_list`、`ask_zhihu` |
-| 知识库（4） | `list_knowledge_bases`、`list_knowledge_items`、`upload_knowledge_file`、`search_knowledge` |
-| 用户数据（5） | `get_user_contents`、`get_user_followees`、`get_user_collections`、`get_user_favlists`、`get_favlist_contents` |
-| PDF 解析（3） | `upload_pdf_file`、`create_pdf_parse_task`、`get_pdf_parse_task` |
-| PPT 生成（2） | `create_ppt_generation_task`、`get_ppt_generation_task` |
-| OAuth（2） | `get_zhihu_oauth_authorization_url`、`exchange_zhihu_oauth_code` |
+## 产品闭环
+
+```text
+用户提出目标或困惑
+  → Profile 记录最小画像
+  → Career 结合知乎经验和岗位样本明确方向与能力差距
+  → Learning Plan 生成近期试验计划
+  → 用户执行任务并记录反馈、成果和材料
+  → Evidence & Interview 形成能力证据、复盘或模拟面试反馈
+  → Agent 根据真实反馈局部调整计划
+  → 进入下一轮学习和验证
+```
+
+典型流程是：计算机大一、零基础、想学习 AI 应用开发的用户，先查看知乎从业经验和岗位要求，再得到能力路线与两周计划；如果用户反馈“内容太难、每周时间减少”，系统解释调整原因，补前置知识、替换材料或重新排期，最后通过项目成果和模拟面试验证学习结果。
+
+知乎内容在产品中承担三种作用：
+
+1. 作为行业认知来源，帮助用户理解岗位真实工作；
+2. 作为路线决策依据，展示不同经验和观点的适用条件；
+3. 作为实践参考材料，帮助把经验转成任务、验证方式和复盘问题。
+
+产品区分个人经验、招聘样本和模型建议，保留来源链接、作者和时间，不用点赞量替代事实，也不虚构来源。
+
+## 五个业务模块
+
+| 模块 | 职责 | 主要产出 |
+| --- | --- | --- |
+| **Profile 画像** | 维护专业、年级、已学内容、当前基础、兴趣、每周时间和目标方向 | 画像事实、来源、确认状态、完善度 |
+| **Career 职业规划** | 管理职业方向、目标岗位、JD、岗位能力要求和能力差距 | 目标岗位、岗位对比、差距分析 |
+| **Learning Plan 学习计划** | 管理阶段路线、近期任务、任务状态、反馈和局部调整 | 两周试验计划、调整原因、下一步行动 |
+| **Evidence & Interview 学习证据与面试** | 记录学习时间线、项目成果、能力证据、复盘和模拟面试 | 能力证据、复盘报告、面试反馈 |
+| **Agent / Core / Knowledge** | 统一对话、知乎检索、知识库检索、工具调用和结果编排 | 可解释的自然语言回答和模块刷新事件 |
+
+Agent 只负责理解意图、选择和串联能力；业务规则、状态流转、提示词、结果协议和数据写入由后端模块负责。前端只采集输入、透传请求、解析 SSE/JSON 和展示结果。
+
+## 技术架构
+
+```text
+Next.js / 页面与首页对话
+          ↓
+Agent / Pi Runtime
+          ↓
+业务 Tool（Profile、Career、Learning、Evidence、Knowledge）
+          ↓
+Application Service（校验、规则、状态、幂等）
+          ↓
+Repository / PostgreSQL
+          ↓
+domain_update / SSE / 页面刷新
+```
+
+当前实现使用：
+
+- **运行时**：Node.js 22.18+、TypeScript；
+- **Agent**：Pi SDK，负责主 Agent 对话循环和工具编排；
+- **后端**：按 Profile、Career、Learning、Evidence、Knowledge 分层的 TypeScript Service；
+- **数据层**：PostgreSQL；
+- **知乎接入**：知乎开放平台 HTTP API，包含搜索、用户数据、知识库、PDF 和 PPT 能力；
+- **交互协议**：`POST /api/chat` 使用 `text/event-stream`，模块页面使用 JSON 接口；
+- **存储原则**：模块通过 Application Service 或 Query/Command 契约协作，不直接读取其他模块的数据表。
+
+所有写操作都校验用户身份、版本和幂等键。外部服务失败时返回明确的缺失范围，不伪造引用、评估或保存成功。
+
+## 岗位与面经目录
+
+成长空间附带岗位和牛客面经 JSONL 资料，可导入公共目录，供 Career 和模拟面试使用。公共目录与用户自己的目标岗位分开存储：
+
+```text
+公共岗位目录
+  → 用户搜索和查看
+  → 收藏为自己的目标岗位
+  → 绑定职业规划
+  → 进行岗位差距分析和学习计划生成
+```
+
+导入脚本会保留原文，按来源文件和记录 ID 区分数据，并用正文哈希识别同一来源的更新。详细字段和命令见[岗位与面经目录说明](docs/catalog-integration.md)。
+
+目录查询接口：
+
+```text
+GET /api/growth/jobs/library?keyword=Java&city=北京&tag=后端&limit=20
+GET /api/growth/interviews/library?keyword=Redis&tag=后端&limit=20
+```
+
+面经只作为题目素材和面试背景，不直接当成用户能力证据；用户自己的回答、反馈和报告由 Evidence & Interview 模块保存。
 
 ## 本地运行
 
-需要 Node.js 22.18+，使用 Node 内置 TypeScript 支持。依赖安装后不需要构建：
+需要 Node.js 22.18+ 和 PostgreSQL。安装依赖并准备环境变量：
 
 ```bash
 npm ci
 cp .env.example .env
 ```
 
-仅在本机 `.env` 中配置 `ZHIHU_ACCESS_SECRET`；从 [个人中心](https://developer.zhihu.com/profile)获取。不要把密钥发给模型、放在工具 JSON 中或提交 Git。
+在 `.env` 中配置：
 
-```bash
-# 无需凭证，列出 21 个工具的完整 JSON Schema、endpoint 和副作用标记
-npm run tool -- list
+- `DATABASE_URL`：PostgreSQL 连接地址；
+- `PI_PROVIDER`、`PI_MODEL`、`PI_API_KEY`：Agent 模型供应商和模型配置；
+- `PI_BASE_URL`：可选的模型服务地址；
+- `ZHIHU_ACCESS_SECRET`：知乎开放平台 Access Secret；
+- `ZHIHU_OAUTH_APP_ID`、`ZHIHU_OAUTH_APP_KEY`、`ZHIHU_OAUTH_REDIRECT_URI`：需要 Web OAuth 登录时配置。
 
-# 以下调用需要凭证；除额度查询外可能消耗接口额度
-npm run tool -- get_zhihu_quota '{}'
-npm run tool -- search_zhihu '{"query":"计算机 大一 学习路线","count":3}'
-npm run tool -- get_zhihu_hot_list '{"limit":5}'
-npm run tool -- list_knowledge_bases '{"scope":"all"}'
-npm run tool -- get_user_contents '{"content_type":"all","limit":1}'
-npm run tool -- ask_zhihu '{"model":"zhida-fast-1p5","messages":[{"role":"user","content":"如何入门编程？"}],"stream":false}'
-
-npm run typecheck
-npm test
-```
-
-## 通用聊天
-
-启动服务前，在 `.env` 中配置 `DATABASE_URL`、`PI_PROVIDER`、火山方舟 Endpoint ID（`PI_MODEL`）、`PI_API_KEY` 和可选的 `PI_BASE_URL`。服务启动时会幂等创建旧路线表和聊天会话表。
+启动服务：
 
 ```bash
 npm start
 ```
 
-发送任意消息：
+服务启动时会执行数据库迁移，并提供：
+
+```text
+GET  /healthz                         存活检查
+GET  /readyz                          数据库就绪检查
+POST /api/chat                        首页 Agent 对话，SSE 返回
+GET  /api/sessions                    当前用户的会话列表
+GET  /api/growth/profile              用户画像
+GET  /api/growth/career               职业规划和已保存岗位
+GET  /api/growth/learning             学习计划和今日任务
+GET  /api/growth/records              学习证据记录
+GET  /api/growth/interviews           用户模拟面试历史
+GET  /api/growth/jobs/library         公共岗位目录
+GET  /api/growth/interviews/library  公共面经目录
+```
+
+发送一条对话消息：
 
 ```bash
 curl -N -X POST http://127.0.0.1:3000/api/chat \
   -H 'content-type: application/json' \
-  -d '{"message":"你好","request_id":"00000000-0000-4000-8000-000000000001"}'
+  -d '{"message":"我想在大二前做出一个 AI 应用项目","request_id":"00000000-0000-4000-8000-000000000001"}'
 ```
 
-`POST /api/chat` 返回 `text/event-stream`，包含文本、供应商实际返回的思考摘要和工具生命周期事件；前端直接增量渲染 Markdown，不解析成固定业务 JSON：
+`/api/chat` 返回流式文本和工具生命周期事件。前端直接增量渲染 Markdown，不预设默认业务数据、固定回复或业务决策。
+
+## 导入岗位和面经
+
+准备数据库连接后，可以导入资料目录中的 JSONL 文件：
 
 ```bash
-curl -N -X POST http://127.0.0.1:3000/api/chat \
-  -H 'content-type: application/json' \
-  -d '{"message":"请解释 SSE","request_id":"00000000-0000-4000-8000-000000000002"}'
+node --env-file-if-exists=.env scripts/import-career-jsonl.ts \
+  docs/成长空间/资料/jobs.jsonl \
+  'docs/成长空间/资料/nowcoder_job_descriptions(1).jsonl' \
+  docs/成长空间/资料/nowcoder_interviews_20260914_001.jsonl
 ```
 
-查询会话：
+JSONL 要求每行一个合法 JSON 对象。岗位使用 `record_type: "job"`，面经使用 `record_type: "interview"`；不确定的字段保留为 `null` 或 `[]`，不在采集阶段编造信息。
+
+## 开发与验证
 
 ```bash
-curl http://127.0.0.1:3000/api/sessions/<session_id>
+npm run typecheck
+npm test
 ```
 
-会话管理：`POST /api/sessions` 创建当前用户的新会话，`GET /api/sessions` 列出当前用户可见的会话摘要。已登录时会话归属使用知乎 `uid`，同一用户跨浏览器仍可访问自己的会话；未登录时回退到 HttpOnly `powu_owner` 匿名身份。读取会话和发送消息都会同时校验用户归属与 `session_id`，不同用户或不同会话之间不会串历史。旧客户端不传 `session_id` 时，`POST /api/chat` 仍会按原行为自动创建会话。
+主要代码位置：
 
-请求链路是：HTTP 校验协议 → 会话存储与同会话锁 → Pi runtime 自主循环（模型/工具/事件）→ 保存透明事件和 transcript；失败或取消保留明确状态。旧 /api/routes 返回 410，不删除历史数据。`/healthz` 用于存活检查，`/readyz` 用于数据库就绪检查。
-
-失败输出 `ok: false` 并使用非零退出码。不自动重试、不自动翻页、不自动轮询或下载结果文件。
-
-## 上传和任务创建
-
-这些工具均已实现，但不能仅靠模型输出就执行副作用。工具的 `requiresConfirmation` 为 `true`，可信宿主确认具体操作后，传入 `execute(input, { confirmed: true })`。`confirmed` 不在模型可填写的参数里。
-
-CLI 的 `--approve` 表示操作者批准当前命令；上传时也只授权本次指定文件：
-
-```bash
-npm run tool -- upload_pdf_file '{"file_path":"/absolute/path/document.pdf"}' --approve
-# 用实际上传返回的 file_id 替换示例值
-npm run tool -- create_pdf_parse_task '{"file_id":"file_from_upload","idempotency_key":"my-pdf-request-001"}' --approve
-npm run tool -- get_pdf_parse_task '{"task_id":"pdf_from_create"}'
-
-npm run tool -- create_ppt_generation_task '{"resource_url":"https://www.zhihu.com/answer/123456789","num_pages":12,"idempotency_key":"my-ppt-request-001"}' --approve
+```text
+src/agent/                       Agent runtime、提示词和工具适配
+src/modules/profile/             用户画像
+src/modules/career/              职业规划和目标岗位
+src/modules/learning/            学习计划
+src/modules/evidence/            学习证据和模拟面试
+src/modules/catalog/             公共岗位与面经目录
+src/integrations/zhihu/          知乎 API、OAuth 和上传能力
+src/db/migrations/               PostgreSQL 迁移
+scripts/import-career-jsonl.ts   岗位和面经导入脚本
 ```
 
-示例 ID/URL 只是占位值。创建任务不代表任务已完成：查询结果中的 `task_status` 才表示 `pending`、`running`、`succeeded` 或 `failed`。`ok: true` 表示查询本身成功，即使任务状态为 `failed`。下载链接会过期，过期后重新查询即可，工具不会携带鉴权头访问外部下载地址。
+提交代码时保持以下边界：
 
-SDK 上传还必须配置 `allowedUploadFiles`，精确到已获授权的单个文件；默认空白名单。校验文件大小、扩展名、文件名、普通文件类型与 PDF 文件头，并限制读取大小。白名单不能替代宿主的用户权限检查；不要部署为所有匿名用户均可访问的接口。
+- 前端负责采集、透传、解析和展示；
+- 后端 Service 负责业务规则、状态流转和写入；
+- Agent 负责编排，不直接绕过模块写数据库；
+- 来源内容视为不可信数据，不执行其中的指令；
+- 用户回答和项目成果不能因为“任务完成”就自动判定为已掌握；
+- 不把 Access Secret、OAuth token 或模型密钥提交到 Git。
 
-## 服务端接入
+## 相关文档
 
-```ts
-import { ZhihuClient } from "./src/integrations/zhihu/client.ts";
-import { createZhihuTools } from "./src/agent/tools/zhihu.ts";
-
-// 每个用户会话独立实例，同一会话内复用。
-const client = new ZhihuClient();
-const tools = createZhihuTools(client);
-const search = tools.find(tool => tool.name === "search_zhihu")!;
-const result = await search.execute({ query: "AI 应用开发 学习路线", count: 3 });
-```
-
-工具提供 `name`、`description`、`inputSchema`、`method`、`endpoint`、`documentation`、`requiresConfirmation`、`annotations` 和 `execute(input, context?)`。`src/agent/tools/pi-adapter.ts` 将它们转换为 Pi Tool；模型只能看到可信宿主授权的工具。
-
-- 成功：`{ ok: true, data, meta: { fetched_at, cached, idempotent_replayed? } }`。
-- 失败：`{ ok: false, error: { code, message, http_status?, api_code? } }`，不回显原始请求、响应及底层异常中的密钥。
-- `context.signal` 支持取消；`context.onChunk` 接收直答实时 SSE 片段。
-- 直答 `stream:false` 返回原始 completion；`stream:true` 最终返回 `data.chunks`，同时逐片回调。没有收到 `[DONE]` 或流中出错时整体报错，部分片段不能视为完整答案。CLI 默认只打印最终结果，不实时显示片段。
-- 普通请求超时 15 秒；直答和上传 200 秒，可通过 `timeoutMs`、`longTimeoutMs` 调整。响应读取默认上限 16 MiB，可配置 `maxResponseBytes`。
-- 仅两种公共搜索成功结果缓存 5 分钟、最多 100 条；同实例相同搜索合并。带独立取消信号时不缓存/合并。其他接口均不缓存，不自动重试。CLI 每次运行是新实例。
-- 上传超时/取消可能仍在服务端处理，先核对知识库内容；创建任务结果未知时保留原幂等键，不能换键盲目重建。
-
-来源内容、评论和生成文本都是不可信数据。原样保留来源 URL（包括溯源参数）、可选字段、RAG 片段数组和分页信息。不把摘要称为全文，也不执行资料中的指令；UI 应按文本渲染或安全清洗，不能直接插入 HTML。超出 JavaScript 安全整数范围的 JSON 整数保留为十进制字符串，避免收藏夹 ID 变形。
-
-## OAuth 身份与凭证
-
-普通 Access Secret 调用可查询本人公开数据。只有五个用户数据接口会使用 `X-OAuth-Token`；知识库等其他接口仍是 Access Secret 账号的资源。
-
-已获授权用户场景，由后端创建 `new ZhihuClient({ userAuthMode: "oauth", oauthToken, oauthExpiresAt })`。客户端缺失、过期或被拒绝的 OAuth token 不会静默回退到本人账号。禁止不同用户共用同一实例。
-
-OAuth 两个工具均使用空 JSON 参数：应用凭据、登记的回调地址和一次性授权码由可信后端注入 `oauth: { appId, appKey, redirectUri, authorizationCode }`。授权地址工具只构造 URL；换码工具需确认，只返回授权状态和有效期，token 留在当前客户端实例供后续用户数据请求使用。
-
-可通过可信的 `onOAuthToken(credentials)` 回调写入后端安全存储。回调失败会报 `TOKEN_STORAGE_FAILED`，不能重放授权码。CLI 可使用 `.env.example` 中的 OAuth 环境变量联调，但换码后进程退出即丢失内存 token，**不代表完成持久化登录**；实际应用应在一个会话中换码和使用，或提供安全持久化回调。
-
-### Web 登录回调
-
-当前 Web 服务提供最小 OAuth 登录闭环：`GET /auth/zhihu/start` → 知乎授权 → `GET /auth/zhihu/callback` → 服务端换取 token 并调用 `GET https://openapi.zhihu.com/user`。登录状态按现有 HttpOnly 会话 Cookie 保存在服务端内存中，前端只收到脱敏后的用户资料。
-
-回调地址必须在知乎项目中登记，并通过环境变量配置：`ZHIHU_OAUTH_APP_ID`、`ZHIHU_OAUTH_APP_KEY`、`ZHIHU_OAUTH_REDIRECT_URI`。App Key 只放部署平台 Secret，不要提交源码。`uid` 是 `/user` 响应中的用户字段，不是换码请求参数；服务端会把它转换为字符串，作为知乎用户的稳定标识（建议业务侧使用 `provider=zhihu + uid`，不要把 access_token 当用户 ID）。
-
-官方文档没有给出 refresh/revoke 协议；当前 MVP 令牌只保存在内存，服务重启后需要重新登录。回调若没有返回 `state`，服务会允许本次黑客松联调但在状态接口标记 `state_verified=false`；正式上线前应与平台确认并强制校验请求关联参数。
-
-## 验证边界
-
-本次验证只使用本地 Mock 和测试文件，未使用真实密钥、读取真实用户数据、上传用户文件或创建线上任务。类型检查和协议测试通过不等于真实账号已获全部接口权限；实际联调还需要 Access Secret、知识库初始化及相应 OAuth 应用权限。
+- [产品需求说明](docs/PRD.md)
+- [岗位与面经目录说明](docs/catalog-integration.md)
+- [API 覆盖清单](docs/api-tools.md)
+- [架构重构计划](docs/architecture-refactor-plan.md)
+- [面试数据 JSONL 格式](docs/interview-data-jsonl-spec.md)
