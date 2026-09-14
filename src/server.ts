@@ -47,6 +47,13 @@ export function createPowuServer(options: Options = {}): Server {
     if (path === "/readyz") { try { await options.readiness?.(); return send(res, 200, { ok: true }); } catch { return send(res, 503, { ok: false }); } }
     if (path === "/" && req.method === "GET") return serve(res, "../public/index.html", "text/html; charset=utf-8");
     if (path.startsWith("/assets/") && req.method === "GET") { const name = path.slice(8); if (!name || name.includes("..") || name.includes("\\")) return send(res, 404, { error: "not_found" }); const types: Record<string,string> = { ".js":"text/javascript; charset=utf-8", ".gif":"image/gif", ".jpg":"image/jpeg", ".png":"image/png" }; return serve(res, `../public/assets/${name}`, types[name.slice(name.lastIndexOf(".")).toLowerCase()] ?? "application/octet-stream"); }
+    // 成长空间原型页：固定白名单，供本地与部署环境直接访问两个页面。
+    const prototypePages: Record<string, string> = {
+      "/learning-platform-prototype.html": "../public/learning-platform-prototype.html",
+      "/evidence-learning-records.html": "../public/evidence-learning-records.html",
+      "/evidence-mock-interview.html": "../public/evidence-mock-interview.html",
+    };
+    if (req.method === "GET" && prototypePages[path]) return serve(res, prototypePages[path], "text/html; charset=utf-8");
     if (path === "/api/auth/zhihu/status" && req.method === "GET") {
       const session = oauthSession(req, res);
       const authorized = Boolean(session.expiresAt && session.expiresAt > Date.now() && session.profile);

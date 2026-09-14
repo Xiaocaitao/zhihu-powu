@@ -114,3 +114,91 @@ test("学习记录与模拟面试页面调用的接口契约保持可用", async
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });
+
+test("学习记录页的筛选、修正与撤回接口契约，以及原型页面可访问", async () => {
+  const registry = createDefaultCapabilityRegistry({
+    evidence: new EvidenceApplication(new MemoryEvidenceRepository(), createEvidenceService({
+      generation: new MockEvidenceGeneration(), ports: defaultPorts(),
+    })),
+  });
+  const server = createPowuServer({ capabilityRegistry: registry });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}`;
+  const headers = { "content-type": "application/json", cookie: "powu_owner=evidence-page-filters" };
+  try {
+    // 页面本身可通过服务地址打开，脚本里引用的是真实接口。
+    const page = await fetch(`${base}/learning-platform-prototype.html`);
+    assert.equal(page.status, 200);
+    const markup = await page.text();
+    assert.ok(markup.includes("/api/evidence/records"));
+    assert.ok(markup.includes("apply-filters"));
+    assert.ok(markup.includes("withdraw-record"));
+
+    const create = async (body: Record<string, unknown>) => {
+      const response = await fetch(`${base}/api/evidence/records`, { method: "POST", headers, body: JSON.stringify(body) });
+      assert.equal(response.status, 200);
+      return (await response.json()).data.record;
+    };
+    const now = Date.now();
+    await create({
+      kind: "activity", title: "筛选用活动", content: "完成 HTTP 练习",
+      occurredAt: new Date(now - 3600_000).toISOString(), durationMinutes: 20, skillIds: [KNOWN_SKILL],
+    });
+    const outcome = await create({
+      kind: "project_outcome", title: "筛选用成果", content: "提交项目里程碑",
+      occurredAt: new Date(now - 1800_000).toISOString(),
+      project: { title: "筛选用项目", goal: "验证筛选", contribution: "完成接口与联调", contributionPending: false },
+    });
+
+    const byKind = await fetch(`${base}/api/evidence/records?kinds=project_outcome`, { headers });
+    const kindBody = await byKind.json();
+    assert.equal(kindBody.data.page.items.length, 1);
+    assert.equal(kindBody.data.page.items[0].kind, "project_outcome");
+
+    const bySkill = await fetch(`${base}/api/evidence/records?skillId=${KNOWN_SKILL}`, { headers });
+    const skillBody = await bySkill.json();
+    assert.equal(skillBody.data.page.items.length, 1);
+    assert.equal(skillBody.data.page.items[0].skillRefs[0].skillId, KNOWN_SKILL);
+
+    const from = new Date(now - 2400_000).toISOString();
+    const to = new Date(now).toISOString();
+    const byRange = await fetch(`${base}/api/evidence/records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { headers });
+    assert.equal((await byRange.json()).data.page.items.length, 1);
+
+    // 修正需要真实版本：先用 If-Match 提供，再用过期版本制造冲突。
+    const amended = await fetch(`${base}/api/evidence/records/${outcome.recordId}`, {
+      method: "PATCH", headers: { ...headers, "if-match": String(outcome.version) },
+      body: JSON.stringify({ action: "amend", changes: { content: "补充了本人贡献与结果" } }),
+    });
+    assert.equal(amended.status, 200);
+    const amendedBody = await amended.json();
+    assert.equal(amendedBody.data.record.version, 2);
+    assert.equal(amendedBody.data.record.content, "补充了本人贡献与结果");
+
+    const stale = await fetch(`${base}/api/evidence/records/${outcome.recordId}`, {
+      method: "PATCH", headers: { ...headers, "if-match": String(outcome.version) },
+      body: JSON.stringify({ action: "amend", changes: { title: "不该写入" } }),
+    });
+    assert.equal(stale.status, 409);
+    assert.equal((await stale.json()).error.code, "VERSION_CONFLICT");
+
+    const withdrawn = await fetch(`${base}/api/evidence/records/${outcome.recordId}`, {
+      method: "PATCH", headers: { ...headers, "if-match": "2" },
+      body: JSON.stringify({ action: "withdraw", reason: "成果归属填写有误" }),
+    });
+    assert.equal(withdrawn.status, 200);
+    assert.equal((await withdrawn.json()).data.record.status, "withdrawn");
+
+    const detail = await fetch(`${base}/api/evidence/records/${outcome.recordId}`, { headers });
+    const detailBody = await detail.json();
+    assert.equal(detailBody.data.record.status, "withdrawn");
+
+    const afterWithdraw = await fetch(`${base}/api/evidence/records?kinds=project_outcome`, { headers });
+    assert.equal((await afterWithdraw.json()).data.page.items.length, 0);
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});

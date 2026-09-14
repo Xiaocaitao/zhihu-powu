@@ -61,6 +61,15 @@ GET    /api/evidence/interviews/:id/feedback[?questionId=]
 
 错误映射：400 参数或身份字段非法、404 不存在、409 版本冲突或重复意图、502 生成失败、503 依赖未配置。
 
+## 本地预览
+
+```text
+node scripts/evidence-preview.ts
+```
+
+打开 `http://127.0.0.1:3100/learning-platform-prototype.html`。该预览使用内存仓储与确定性生成器，
+只用于核对页面结构与交互；生产由 `src/server.ts` 组装 PostgreSQL 仓储与模型生成端口。
+
 ## 关键协作约束
 
 - Learning Plan 提供任务、阶段、反馈、计划调整及阶段测试结果摘要；本模块只引用，不负责测试或调整计划。

@@ -168,6 +168,26 @@ views.learning={title:'学习成长',html:()=>`<section class="view"><div class=
             <button class="primary" data-view="learning">查看学习计划　→</button>
           </div>
         </div>
+        <div class="card module-body">
+          <div class="search">
+            <select id="filter-range">
+              <option value="week">本周</option>
+              <option value="7d">近 7 天</option>
+              <option value="30d">近 30 天</option>
+            </select>
+            <select id="filter-kind">
+              <option value="">全部类型</option>
+              <option value="activity">学习活动</option>
+              <option value="project_outcome">项目成果</option>
+              <option value="task_change">任务变化</option>
+              <option value="learning_feedback">学习反馈</option>
+              <option value="plan_adjustment">计划调整</option>
+            </select>
+            <input id="filter-skill" placeholder="按能力标识筛选（可选，如 skill-http）">
+            <button class="secondary" id="apply-filters">应用筛选</button>
+          </div>
+          <p class="view-intro" style="margin:8px 0 0">时间范围、类型与能力筛选都由服务端执行；外部来源缺失时会在下方覆盖说明中标注。</p>
+        </div>
         <div class="evidence-grid">
           <div class="evidence-stack">
             <article class="card">
@@ -207,13 +227,37 @@ views.learning={title:'学习成长',html:()=>`<section class="view"><div class=
     };
 
     /* ------------------------------ 学习记录 ------------------------------ */
+    const recordFilters = { range: 'week', kind: '', skillId: '' };
+    function recordQuery() {
+      const params = new URLSearchParams();
+      if (recordFilters.range === 'week') {
+        params.set('weekOf', new Date().toISOString());
+      } else {
+        const days = recordFilters.range === '30d' ? 30 : 7;
+        params.set('from', new Date(Date.now() - days * 86400000).toISOString());
+        params.set('to', new Date().toISOString());
+      }
+      if (recordFilters.kind) params.set('kinds', recordFilters.kind);
+      if (recordFilters.skillId) params.set('skillId', recordFilters.skillId);
+      params.set('limit', '50');
+      return params.toString();
+    }
     async function loadRecords() {
       const listEl = document.querySelector('#record-list');
       const countEl = document.querySelector('#record-count');
       const coverageEl = document.querySelector('#record-coverage');
       document.querySelector('#generate-review').addEventListener('click', generateReview);
+      document.querySelector('#filter-range').value = recordFilters.range;
+      document.querySelector('#filter-kind').value = recordFilters.kind;
+      document.querySelector('#filter-skill').value = recordFilters.skillId;
+      document.querySelector('#apply-filters').addEventListener('click', () => {
+        recordFilters.range = document.querySelector('#filter-range').value;
+        recordFilters.kind = document.querySelector('#filter-kind').value;
+        recordFilters.skillId = document.querySelector('#filter-skill').value.trim();
+        loadRecords();
+      });
       try {
-        const data = await api('/api/evidence/records?weekOf=' + encodeURIComponent(new Date().toISOString()));
+        const data = await api('/api/evidence/records?' + recordQuery());
         const list = rows(data.page?.items);
         countEl.textContent = `${list.length} 条`;
         coverageEl.textContent = coverageNote(data.coverage, data.range);
@@ -254,9 +298,61 @@ views.learning={title:'学习成长',html:()=>`<section class="view"><div class=
           <p class="view-intro">关联能力：${skills.length ? esc(skills.map(skill => skill.name).join('、')) : '未关联'}</p>
           ${pending.length ? `<p class="view-intro">待确认关联：${esc(pending.map(item => `${item.source}（${item.reason}）`).join('；'))}</p>` : ''}
           ${missing.length ? `<p class="view-intro">需要补充：${esc(missing.join('；'))}</p>` : ''}
+          <details style="margin:10px 0">
+            <summary>补充、修正或撤回这条记录（当前版本 ${esc(record.version)}）</summary>
+            <input id="edit-title" value="${esc(record.title)}" placeholder="标题">
+            <textarea id="edit-content" class="interview-answer" placeholder="内容">${esc(record.content)}</textarea>
+            <input id="edit-duration" type="number" min="0" max="10080" placeholder="实际用时（分钟，留空表示未知）">
+            <input id="edit-occurred" placeholder="发生时间（ISO，例如 2026-09-13T10:00:00+08:00）">
+            <div class="question-actions">
+              <button class="primary" id="save-record">保存修正</button>
+              <input id="withdraw-reason" placeholder="撤回原因">
+              <button class="secondary" id="withdraw-record">撤回这条记录</button>
+            </div>
+            <span class="view-intro">修正或撤回后，引用这条记录的旧评估会标记为需要重新评估。</span>
+          </details>
           <button class="secondary" id="assess-record">评估该记录支持的能力</button>
           <div class="interview-feedback" id="assess-result"></div>`;
         document.querySelector('#assess-record').addEventListener('click', () => assessRecord(recordId, skills));
+        document.querySelector('#save-record').addEventListener('click', async event => {
+          const changes = {};
+          const title = document.querySelector('#edit-title').value.trim();
+          const content = document.querySelector('#edit-content').value.trim();
+          const duration = document.querySelector('#edit-duration').value;
+          const occurredAt = document.querySelector('#edit-occurred').value.trim();
+          if (title && title !== record.title) changes.title = title;
+          if (content && content !== record.content) changes.content = content;
+          if (duration !== '') changes.durationMinutes = Number(duration);
+          if (occurredAt) changes.occurredAt = occurredAt;
+          if (!Object.keys(changes).length) { toastIt('没有需要保存的修改'); return; }
+          event.currentTarget.disabled = true;
+          try {
+            await api('/api/evidence/records/' + encodeURIComponent(recordId), {
+              method: 'PATCH',
+              headers: { 'If-Match': String(record.version) },
+              body: JSON.stringify({ action: 'amend', changes })
+            });
+            await loadRecords();
+            await loadRecordDetail(recordId);
+            toastIt('修正已保存');
+          } catch (error) { toastIt(error.message); event.currentTarget.disabled = false; }
+        });
+        document.querySelector('#withdraw-record').addEventListener('click', async event => {
+          const reason = document.querySelector('#withdraw-reason').value.trim();
+          if (!reason) { toastIt('请填写撤回原因'); return; }
+          event.currentTarget.disabled = true;
+          try {
+            await api('/api/evidence/records/' + encodeURIComponent(recordId), {
+              method: 'PATCH',
+              headers: { 'If-Match': String(record.version) },
+              body: JSON.stringify({ action: 'withdraw', reason })
+            });
+            await loadRecords();
+            document.querySelector('#record-detail').innerHTML =
+              '<p class="view-intro">该记录已撤回，保留撤回说明，不再参与新的有效证据判断。</p>';
+            toastIt('记录已撤回');
+          } catch (error) { toastIt(error.message); event.currentTarget.disabled = false; }
+        });
       } catch (error) { el.innerHTML = offline(error); }
     }
 
