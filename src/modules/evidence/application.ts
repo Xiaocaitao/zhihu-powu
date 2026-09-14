@@ -19,6 +19,30 @@ export class EvidenceApplication {
     return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取学习记录", data: { items: records } };
   }
 
+  async getSkillEvidence(ctx: EvidenceContext, skillId?: string) {
+    const records = await this.repository.listRecords(ctx.ownerId, skillId ? { skillId } : {});
+    records.forEach(record => this.service.hydrateRecord(record));
+    return this.service.getSkillEvidence(ctx, skillId);
+  }
+
+  async evaluateLearningEvidence(ctx: EvidenceContext, evidenceIds: string[], skillIds: string[]) {
+    const records = await this.repository.listRecords(ctx.ownerId, {});
+    records.filter(record => evidenceIds.includes(record.recordId)).forEach(record => this.service.hydrateRecord(record));
+    const result = this.service.evaluateLearningEvidence(ctx, evidenceIds, skillIds);
+    if (result.ok && result.data?.assessment) await this.repository.saveAssessment(result.data.assessment);
+    return result;
+  }
+
+  async generateLearningReview(ctx: EvidenceContext, from: string, to: string) {
+    const records = await this.repository.listRecords(ctx.ownerId, { from, to });
+    records.forEach(record => this.service.hydrateRecord(record));
+    const result = this.service.generateLearningReview(ctx, from, to);
+    if (result.ok && result.data?.review) await this.repository.saveReview(result.data.review);
+    return result;
+  }
+
+  async getLearningReviews(ctx: EvidenceContext) { return this.service.getLearningReviews(ctx); }
+
   async updateLearningEvidence(ctx: EvidenceContext, recordId: string, changes: Parameters<EvidenceService["updateLearningEvidence"]>[2]) {
     const result = this.service.updateLearningEvidence(ctx, recordId, changes);
     if (result.ok && result.changed && result.data?.record) await this.repository.updateRecord(result.data.record);
@@ -40,6 +64,13 @@ export class EvidenceApplication {
     return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取面试会话", data: { interview } };
   }
 
+  async getInterviewFeedback(ctx: EvidenceContext, interviewId: string) {
+    const interview = await this.repository.getInterview(ctx.ownerId, interviewId);
+    if (!interview) return { ok: false, changed: false, domain: "evidence" as const, status: "rejected" as const, summary: "面试不存在", error: { code: "NOT_FOUND", message: "面试不存在" } };
+    this.service.hydrateInterview(interview);
+    return this.service.getInterviewFeedback(ctx, interviewId);
+  }
+
   async finishInterview(ctx: EvidenceContext, interviewId: string) {
     const existing = await this.repository.getInterview(ctx.ownerId, interviewId);
     if (!existing) return { ok: false, changed: false, domain: "evidence" as const, status: "rejected" as const, summary: "面试不存在", error: { code: "NOT_FOUND", message: "面试不存在" } };
@@ -58,11 +89,15 @@ export class EvidenceApplication {
     return result;
   }
 
-  async getInterviewRecords(ctx: EvidenceContext) {
+  async getInterviewRecords(ctx: EvidenceContext): Promise<any> {
     if (this.repository.listInterviews) {
       const items = await this.repository.listInterviews(ctx.ownerId);
-      return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取面试历史", data: { items } };
+      const active = items.find(item => item.status === "active");
+      const session = active ? await this.repository.getInterview(ctx.ownerId, active.interviewId) : null;
+      return { ok: true, changed: false, domain: "evidence" as const, status: "read" as const, summary: "已读取面试历史", data: { items, session } };
     }
-    return this.service.getInterviewRecords(ctx);
+    const result = this.service.getInterviewRecords(ctx);
+    if (result.ok && result.data) return { ...result, data: { ...result.data, session: null } };
+    return result;
   }
 }

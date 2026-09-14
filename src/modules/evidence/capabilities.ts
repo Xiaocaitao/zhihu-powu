@@ -1,4 +1,5 @@
 import type { EvidenceService } from "./service.ts";
+import type { EvidenceApplication } from "./application.ts";
 import type { EvidenceContext } from "./contracts.ts";
 import { z } from "zod";
 import { recordInputSchema } from "./contracts.ts";
@@ -16,7 +17,7 @@ const updateSchema = z.discriminatedUnion("action", [
 ]);
 function validated<T extends z.ZodType>(schema: T, run: (ctx: EvidenceContext, input: z.infer<T>) => unknown) { return (ctx: EvidenceContext, input: unknown) => run(ctx, schema.parse(input)); }
 
-export function createEvidenceCapabilities(service: EvidenceService) {
+export function createEvidenceCapabilities(service: EvidenceService | EvidenceApplication) {
   return [
     { name: "get_learning_records", description: "查询当前用户学习记录", inputSchema: listSchema, execute: validated(listSchema, (ctx, input) => service.getLearningRecords(ctx, input)) },
     { name: "record_learning_evidence", description: "保存学习活动或项目成果", inputSchema: recordInputSchema, execute: validated(recordInputSchema, (ctx, input) => service.recordLearningEvidence(ctx, input)) },

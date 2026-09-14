@@ -1,6 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { createZhihuTools } from "./zhihu.ts";
+import { toToolSchema } from "./schema.ts";
 
 type Tool = ReturnType<typeof createZhihuTools>[number];
 // Capabilities are selected by the trusted host, not by user/model parameters.
@@ -9,7 +10,7 @@ export function adaptTools(tools: Tool[], allowed: ReadonlySet<string> = publicT
   approve?: (name: string, args: unknown, signal?: AbortSignal) => Promise<boolean>): AgentTool[] {
   return tools.filter(tool => allowed.has(tool.name)).map(tool => ({
     name: tool.name, label: tool.name, description: tool.description,
-    parameters: Type.Unsafe(tool.inputSchema),
+    parameters: Type.Unsafe(toToolSchema(tool.inputSchema)),
     replay: "never",
     execute: async (_id, args, signal, onUpdate) => {
       signal?.throwIfAborted();

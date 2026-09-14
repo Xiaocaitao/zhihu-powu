@@ -9,8 +9,9 @@ export function createDoubaoModels(modelId: string, baseUrl = "https://ark.cn-be
     provider: "doubao",
     baseUrl,
     reasoning: true,
-    // Doubao accepts reasoning.effort but rejects the OpenAI-only summary field.
-    samplingParams: { reasoning: { effort: "high" } },
+    // Ark accepts reasoning.effort but rejects the OpenAI Responses summary field.
+    // This override is merged last by pi-ai and keeps V4 Flash thinking enabled.
+    samplingParams: { reasoning: { effort: "low" } },
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128000,

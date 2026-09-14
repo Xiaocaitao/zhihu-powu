@@ -8,6 +8,9 @@ export class EvidenceService {
   private assessments = new Map<string, Assessment>();
   private operations = new Map<string, string>();
   private now() { return new Date().toISOString(); }
+  hydrateRecord(record: LearningRecord) { this.records.set(record.recordId, record); }
+  discardUnsavedRecord(recordId: string) { this.records.delete(recordId); for (const [key, id] of this.operations) if (id === recordId) this.operations.delete(key); }
+  hydrateInterview(interview: Interview) { this.interviews.set(interview.interviewId, interview); }
   private result<T>(data: T, summary: string, changed = false, entityId?: string): CapabilityResult<T> { return { ok: true, changed, domain: "evidence", entityId, status: changed ? "applied" : "read", summary, data }; }
   private duplicate<T>(ctx: EvidenceContext, data: T, entityId?: string): CapabilityResult<T> { return { ...this.result(data, "重复请求，返回已有结果"), data, entityId }; }
   recordLearningEvidence(ctx: EvidenceContext, input: RecordInput): CapabilityResult<{ record: LearningRecord }> {
