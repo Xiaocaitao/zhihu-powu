@@ -137,6 +137,16 @@ export function createPowuServer(options: Options = {}): Server {
         return send(res, 200, { ok: true, plan: planResult.data ?? null, tasks: tasksResult.data ?? [] });
       } catch (error) { console.error("learning read failed", error); return send(res, 502, { ok: false, error: "learning_read_failed" }); }
     }
+    if (path === "/api/growth/records" && req.method === "GET") {
+      const capability = options.capabilityRegistry?.list().find(item => item.name === "get_learning_records");
+      if (!capability) return send(res, 503, { ok: false, error: "records_unavailable" });
+      const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
+      try {
+        const result = await capability.execute(context, {});
+        if (!result.ok) return send(res, 502, { ok: false, error: "records_read_failed" });
+        return send(res, 200, { ok: true, items: (result.data as { items?: unknown[] } | undefined)?.items ?? [] });
+      } catch (error) { console.error("records read failed", error); return send(res, 502, { ok: false, error: "records_read_failed" }); }
+    }
     if (path === "/api/growth/interviews" && req.method === "GET") {
       if (!options.capabilityRegistry) return send(res, 503, { ok: false, error: "interview_unavailable" });
       const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };

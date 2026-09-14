@@ -10,7 +10,10 @@ export class EvidenceApplication {
 
   async recordLearningEvidence(ctx: EvidenceContext, input: RecordInput) {
     const result = this.service.recordLearningEvidence(ctx, input);
-    if (result.ok && result.changed && result.data?.record) await this.repository.createRecord(result.data.record);
+    if (result.ok && result.changed && result.data?.record) {
+      try { await this.repository.createRecord(result.data.record); }
+      catch (error) { this.service.discardUnsavedRecord(result.data.record.recordId); throw error; }
+    }
     return result;
   }
 
