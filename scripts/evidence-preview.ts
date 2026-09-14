@@ -8,11 +8,13 @@
  * 生产环境仍由 src/server.ts 组装 PostgreSQL 与模型生成端口。
  */
 import { createPowuServer } from "../src/server.ts";
-import { createDefaultCapabilityRegistry } from "../src/app/composition-root.ts";
+import { createDefaultApplications } from "../src/app/composition-root.ts";
 
 const port = Number(process.env.PREVIEW_PORT ?? 3100);
 const host = process.env.PREVIEW_HOST ?? "127.0.0.1";
-const server = createPowuServer({ capabilityRegistry: createDefaultCapabilityRegistry() });
+// 使用完整默认组装，让岗位下拉（Career）与能力目录（Shared Skills）在预览里也可用。
+const applications = createDefaultApplications();
+const server = createPowuServer({ applications });
 
 server.listen(port, host, () => {
   console.log(`学习记录与模拟面试预览：http://${host}:${port}/learning-platform-prototype.html`);
