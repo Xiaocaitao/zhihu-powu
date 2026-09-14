@@ -222,7 +222,8 @@ if(confirmTitle&&confirmHelp){if(confirmed){confirmTitle.textContent='规划已�
     document.querySelectorAll('[data-learning-action]').forEach(button=>button.addEventListener('click',()=>growthPrompt(button.dataset.learningAction==='feedback'?'请记录用户对当前学习任务的反馈，并按 Learning Plan 契约返回结果。':'请读取当前用户的学习计划和今日任务。')));
     document.querySelectorAll('[data-record-action]').forEach(button=>button.addEventListener('click',()=>growthPrompt(button.dataset.recordAction==='add'?'请引导用户提供真实学习事实后调用 record_learning_evidence。':button.dataset.recordAction==='evidence'?'请读取当前用户已有能力证据，不要因查询生成评估。':'请根据明确时间范围调用 generate_learning_review，记录不足时说明覆盖不足。')));
   </script>
-  <script>
+  <script src="profile-ui.js"></script>
+<script>
     // 学习记录与模拟面试：模块内动作直接调用公开接口，全程不离开本页，也不改其它模块的交互。
     (() => {
       const kindText = { activity: '学习活动', project_outcome: '项目成果', task_change: '任务变化', learning_feedback: '学习反馈', plan_adjustment: '计划调整', assessment_result: '阶段测试结果', interview_result: '面试结果' };
@@ -875,6 +876,5 @@ if(confirmTitle&&confirmHelp){if(confirmed){confirmTitle.textContent='规划已�
       syncInterviewProjectFields();
       renderSession(null);
     })();
-  </script>
-</body>
+  </script></body>
 </html>
