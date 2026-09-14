@@ -626,6 +626,23 @@
       // 页面进入时会调用这两个函数；本脚本的实现覆盖上面的旧版本。
       renderInterviewPanel = interviewPanel;
 
+      // 聊天里 Agent 调用本模块工具成功后，自动切到对应页面，用户不用自己找。
+      const toolPages = {
+        start_interview: 'interview', submit_interview_answer: 'interview', finish_interview: 'interview',
+        record_learning_evidence: 'record', update_learning_evidence: 'record',
+        evaluate_learning_evidence: 'record', generate_learning_review: 'record',
+      };
+      const originalParseSse = parseSse;
+      parseSse = (response, handlers = {}, options) => originalParseSse(response, {
+        ...handlers,
+        tool_end: data => {
+          handlers.tool_end?.(data);
+          if (data?.error) return;                       // 工具失败时不跳转，保留对话里的错误说明
+          const page = toolPages[data?.tool_name];
+          if (page) showPage(page);                      // showPage 会调用本页的刷新实现
+        },
+      }, options);
+
       document.querySelector('#interview-start-form')?.addEventListener('submit', event => { event.preventDefault(); void startInterview(); });
       document.querySelector('[data-interview-resume]')?.addEventListener('click', () => void interviewPanel());
       document.querySelector('#interview-answer-form')?.addEventListener('submit', event => { event.preventDefault(); void submitAnswer(); });

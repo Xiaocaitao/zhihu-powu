@@ -104,6 +104,8 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     const block = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)].at(-1)?.[2];
     assert.ok(block, "应能找到页面最后一段脚本");
     const { document, element } = createDom();
+    const sseHandlers: Record<string, (data: unknown) => unknown> = {};
+    const pageCalls: string[] = [];
     const sandbox: Record<string, unknown> = {
       document,
       console,
@@ -117,6 +119,14 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
         calls.push(String(path));
         return fetch(origin + String(path), { ...init, headers: { "content-type": "application/json", cookie, ...(init?.headers ?? {}) } });
       },
+      // 页面里已有的全局函数：这里只用于验证 Agent 工具结束后的页面联动。
+      parseSse: (_response: unknown, handlers: Record<string, (data: unknown) => unknown>) => {
+        Object.assign(sseHandlers, handlers);
+        return Promise.resolve();
+      },
+      showPage: (name: string) => { pageCalls.push(name); },
+      renderInterviewPanel: () => Promise.resolve(),
+      refreshRecords: () => Promise.resolve(),
     };
     const context = vm.createContext(sandbox);
     vm.runInContext(block, context, { filename: "index-evidence-script" });
@@ -163,6 +173,18 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     await waitFor(() => element("#interview-question-title").textContent.startsWith("第 1 题"));
     const startsAfter = calls.filter(path => path === "/api/evidence/interviews").length;
     assert.equal(startsAfter, startsBefore + 1, "再练一场应创建新的面试会话");
+
+    // 聊天的 SSE 里 Agent 调用本模块工具成功后，页面自动切到对应模块。
+    await (sandbox.parseSse as (response: unknown, handlers: object) => Promise<void>)({}, {});
+    const toolEnd = sseHandlers.tool_end as (data: unknown) => unknown;
+    assert.equal(typeof toolEnd, "function", "应接管 tool_end 事件");
+    toolEnd({ tool_name: "start_interview", error: false });
+    assert.deepEqual(pageCalls, ["interview"], "开始面试后应切到模拟面试页");
+    toolEnd({ tool_name: "record_learning_evidence", error: false });
+    assert.deepEqual(pageCalls, ["interview", "record"], "记录学习后应切到学习记录页");
+    toolEnd({ tool_name: "start_interview", error: true });
+    toolEnd({ tool_name: "get_learning_records", error: false });
+    assert.deepEqual(pageCalls, ["interview", "record"], "失败或只读工具不应触发跳转");
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
