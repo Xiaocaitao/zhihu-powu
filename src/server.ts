@@ -58,6 +58,7 @@ export function createPowuServer(options: Options = {}): Server {
     if (path === "/healthz") return send(res, 200, { ok: true });
     if (path === "/readyz") { try { await options.readiness?.(); return send(res, 200, { ok: true }); } catch { return send(res, 503, { ok: false }); } }
     if (path === "/" && req.method === "GET") return serve(res, "../public/index.html", "text/html; charset=utf-8");
+    if (path === "/profile-ui.js" && req.method === "GET") return serve(res, "../public/profile-ui.js", "text/javascript; charset=utf-8");
     if (path.startsWith("/assets/") && req.method === "GET") { const name = path.slice(8); if (!name || name.includes("..") || name.includes("\\")) return send(res, 404, { error: "not_found" }); const types: Record<string,string> = { ".js":"text/javascript; charset=utf-8", ".gif":"image/gif", ".jpg":"image/jpeg", ".png":"image/png" }; return serve(res, `../public/assets/${name}`, types[name.slice(name.lastIndexOf(".")).toLowerCase()] ?? "application/octet-stream"); }
     // 成长空间原型页：固定白名单，供本地与部署环境直接访问两个页面。
     const prototypePages: Record<string, string> = {
@@ -158,6 +159,26 @@ export function createPowuServer(options: Options = {}): Server {
         if (!profileResult.ok || !completionResult.ok) return send(res, 502, { ok: false, error: "profile_read_failed" });
         return send(res, 200, { ok: true, profile: profileResult.data, completion: completionResult.data });
       } catch (error) { console.error("profile read failed", error); return send(res, 502, { ok: false, error: "profile_read_failed" }); }
+    }
+    if (path === "/api/growth/profile/facts" && req.method === "POST") {
+      const capability = capabilityRegistry?.list().find(item => item.name === "save_profile_fact");
+      if (!capability) return send(res, 503, { ok: false, error: "profile_unavailable" });
+      try {
+        const input = await readBody(req); const requestId = req.headers["x-request-id"]?.toString() ?? randomUUID();
+        const operationKey = req.headers["idempotency-key"]?.toString() ?? randomUUID();
+        const result = await capability.execute({ ownerId: authenticatedOwner(req, res), requestId, operationKey }, input);
+        return send(res, result.ok ? 200 : result.error?.code === "VERSION_CONFLICT" ? 409 : 400, result);
+      } catch (error) { console.error("profile fact write failed", error); return send(res, 400, { ok: false, error: "profile_write_failed" }); }
+    }
+    if (path === "/api/growth/profile/goal" && req.method === "POST") {
+      const capability = capabilityRegistry?.list().find(item => item.name === "update_user_goal");
+      if (!capability) return send(res, 503, { ok: false, error: "profile_unavailable" });
+      try {
+        const input = await readBody(req); const requestId = req.headers["x-request-id"]?.toString() ?? randomUUID();
+        const operationKey = req.headers["idempotency-key"]?.toString() ?? randomUUID();
+        const result = await capability.execute({ ownerId: authenticatedOwner(req, res), requestId, operationKey }, input);
+        return send(res, result.ok ? 200 : result.error?.code === "VERSION_CONFLICT" ? 409 : 400, result);
+      } catch (error) { console.error("profile goal write failed", error); return send(res, 400, { ok: false, error: "profile_write_failed" }); }
     }
     if (path === "/api/growth/career" && req.method === "GET") {
       const context = { ownerId: authenticatedOwner(req, res), requestId: randomUUID(), operationKey: randomUUID() };
