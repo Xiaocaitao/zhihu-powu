@@ -1,22 +1,18 @@
-# Career 模块 Mock MVP
+# Career 模块
 
-本目录实现 Career 接口文档中的第一版 Mock Application Service，不接真实 API、数据库或用户数据。
+本目录提供基于远程 `main` 分支类型的 Career 应用服务、能力注册和仓储实现。当前实现不再包含旧版 Mock 数据、Mock 依赖、Mock Repository 或旧 Service 测试。
 
-## 使用
+## 当前实现
 
-```ts
-import { MockCareerRepository } from "./mock-repository.ts";
-import { MockCareerService } from "./service.ts";
-import { createMockEvidenceQuery, createMockProfileQuery } from "./mock-dependencies.ts";
-import { mockCompanies, mockTrends } from "./mock-data.ts";
+- `contracts.ts`：Career 领域类型、输入类型和 Zod 校验 Schema。
+- `types.ts`：`CareerApplication` 应用服务接口。
+- `service.ts`：职业规划、目标岗位、岗位差距分析和岗位对比等用例。
+- `repository.ts`：`CareerRepository` 接口、内存仓储和岗位构造辅助函数。
+- `postgres-repository.ts`：生产环境 PostgreSQL 仓储实现。
+- `capabilities.ts`：Career 能力注册，包括读取、保存、选择、确认、分析和对比操作。
 
-const service = new MockCareerService({
-  repository: new MockCareerRepository(),
-  profileQuery: createMockProfileQuery(),
-  evidenceQuery: createMockEvidenceQuery(),
-  companies: mockCompanies,
-  trends: mockTrends,
-});
-```
+## 已注册能力
 
-写操作必须携带 `idempotencyKey`，确认规划和选择岗位必须携带 `expectedVersion`。本版本只提供 Service、Mock Repository 和能力工厂，HTTP Handler、真实依赖注入和队长集成由队长负责。
+`get_career_plan`、`create_career_plan_draft`、`get_target_jobs`、`save_target_job`、`select_target_job`、`analyze_job_gap`、`confirm_career_plan`、`get_career_dashboard`、`compare_target_jobs`。
+
+写操作通过 `DomainCommand` 传递用户上下文；涉及职业规划状态变化的选择岗位和确认规划操作需要显式确认，并使用 `expectedVersion` 做乐观并发校验。生产启动应注入 `PostgresCareerRepository`，数据库结构见 `src/db/migrations/004-career.sql`。
