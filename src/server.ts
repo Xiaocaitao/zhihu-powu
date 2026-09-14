@@ -13,6 +13,7 @@ import { createZhihuOAuth, type ZhihuOAuthProfile, type ZhihuOAuthProvider } fro
 import { matchApplicationRoute, type ApplicationRoute } from "./http/routes.ts";
 import { createCareerRoutes, careerRouteErrorStatus } from "./http/career.ts";
 import { createEvidenceRoutes } from "./http/evidence.ts";
+import { createSkillRoutes } from "./http/skills.ts";
 import type { CapabilityRegistry } from "./agent/tools/registry.ts";
 import type { PromptContext } from "./agent/prompts/system.ts";
 import { PostgresKnowledgeStore } from "./modules/knowledge/postgres-repository.ts";
@@ -50,6 +51,7 @@ export function createPowuServer(options: Options = {}): Server {
     ...(careerApplication ? createCareerRoutes(careerApplication) : []),
     // 始终注册 Evidence 路由：缺少注册表时由模块返回 503，而不是静默 404。
     ...createEvidenceRoutes(capabilityRegistry),
+    ...createSkillRoutes(capabilityRegistry),
   ];
   return createServer(async (req, res) => {
     const path = (req.url ?? "/").split("?", 1)[0];
