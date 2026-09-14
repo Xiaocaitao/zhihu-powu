@@ -114,10 +114,10 @@ SELECT
   CASE WHEN map.payload->>'taskType' IN ('reading','practice','project','review') THEN map.payload->>'taskType' ELSE 'practice' END,
   CASE WHEN map.payload->>'status' IN ('todo','in_progress','completed','paused') THEN map.payload->>'status' ELSE 'todo' END,
   GREATEST(COALESCE((map.payload->>'priority')::integer, map.position), 1),
-  GREATEST(COALESCE((map.payload->>'estimatedMinutes')::integer, 1), 1),
+  GREATEST(CASE WHEN (map.payload->>'estimatedMinutes') ~ '^[0-9]+$' THEN (map.payload->>'estimatedMinutes')::integer ELSE 1 END, 1),
   CASE WHEN (map.payload->>'actualMinutes') ~ '^[0-9]+$' THEN (map.payload->>'actualMinutes')::integer ELSE NULL END,
   NULLIF(map.payload->>'capabilityKey', ''),
-  COALESCE((map.payload->>'evidenceRequired')::boolean, FALSE),
+  CASE WHEN map.payload->>'evidenceRequired' IN ('true', 'false') THEN (map.payload->>'evidenceRequired')::boolean ELSE FALSE END,
   now(), now()
 FROM learning_task_migration_map map
 ON CONFLICT (id) DO NOTHING;
@@ -139,7 +139,7 @@ SELECT
   COALESCE(NULLIF(schedule.item->>'scheduleDate', '')::date, p.start_date),
   NULLIF(schedule.item->>'startAt', '')::timestamptz,
   NULLIF(schedule.item->>'endAt', '')::timestamptz,
-  GREATEST(COALESCE((schedule.item->>'durationMinutes')::integer, t.estimated_minutes), 1),
+  GREATEST(CASE WHEN (schedule.item->>'durationMinutes') ~ '^[0-9]+$' THEN (schedule.item->>'durationMinutes')::integer ELSE t.estimated_minutes END, 1),
   CASE WHEN schedule.item->>'status' IN ('scheduled','done','missed','rescheduled') THEN schedule.item->>'status' ELSE 'scheduled' END
 FROM learning_task_migration_map map
 JOIN learning_plans p ON p.id = map.plan_id
