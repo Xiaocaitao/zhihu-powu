@@ -24,6 +24,11 @@ function historyText(history: unknown[]) {
   return JSON.stringify(history).slice(-12000);
 }
 
+export function hasZhihuResearch(history: unknown[]): boolean {
+  const text = historyText(history);
+  return /search_zhihu|zhuanlan\.zhihu\.com|知乎/.test(text);
+}
+
 export function workflowHint(state: LearningWorkflowState): string {
   switch (state) {
     case "goal_detected": return "当前工作流阶段：已识别学习目标。先理解目标和信息缺口，必要时询问；不要自动写入业务数据。";

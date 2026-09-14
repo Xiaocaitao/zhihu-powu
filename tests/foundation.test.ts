@@ -80,3 +80,9 @@ test("learning workflow rejects a final plan before activation stage", async () 
   const result = await tool.execute("id", { mode: "final" }, new AbortController().signal) as any;
   assert.equal(result.details.error.code, "WORKFLOW_STAGE_REQUIRED");
 });
+
+test("learning workflow requires Zhihu research before plan creation", async () => {
+  const { hasZhihuResearch } = await import("../src/agent/workflows/learning-workflow.ts");
+  assert.equal(hasZhihuResearch([]), false);
+  assert.equal(hasZhihuResearch([{ toolName: "search_zhihu", result: "https://zhuanlan.zhihu.com/p/1" }]), true);
+});
