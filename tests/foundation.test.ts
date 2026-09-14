@@ -42,6 +42,13 @@ test("growth prompt maps an explicit skills write to learned_content profile fac
   assert.match(prompt, /此类请求信息足够时优先直接调用 record_learning_evidence/);
 });
 
+test("growth prompt maps profile directions to the correct Profile tools", async () => {
+  const prompt = await buildPrompt({ message: "保存画像表单", sessionId: "profile-form-1" });
+  assert.match(prompt, /target_direction 必须使用 update_user_goal/);
+  assert.match(prompt, /绝不能使用 save_profile_fact 保存 target_direction/);
+  assert.match(prompt, /interest_direction、learning_preference 使用 save_profile_fact/);
+});
+
 test("growth prompt keeps first learning plans in trial mode", async () => {
   const prompt = await buildPrompt({ message: "生成学习计划", sessionId: "session-1" });
   assert.match(prompt, /首次生成.*mode=trial/);
