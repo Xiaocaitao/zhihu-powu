@@ -385,3 +385,4 @@ test("chat SSE parser requires complete and surfaces server errors", async () =>
   await assert.doesNotReject(parseSse(response(['event: complete\ndata: {}\n\n']), {}));
   await assert.rejects(parseSse(response(['event: error\ndata: {"error":"boom"}\n\n']), {}), /boom/);
 });
+

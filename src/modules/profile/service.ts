@@ -23,3 +23,11 @@ export class ProfileService implements ProfileApplication {
  async saveProfileFact(ctx:ProfileContext,input:SaveProfileFactInput){validateFact(input);const fact=await this.repo.saveFact(ctx.ownerId,{factType:input.factType,section:sectionMap[input.factType],value:input.value as any,source:input.source,isConfirmed:input.isConfirmed??input.source==='user_confirmed',evidenceRef:input.evidenceRef},input.expectedVersion);return {ok:true,changed:true,domain:'profile' as const,status:'applied',summary:'画像事实已保存',entityId:fact.id,version:fact.version,data:{fact}};}
  async updateUserGoal(ctx:ProfileContext,input:UpdateUserGoalInput){const goal=await this.repo.saveGoal(ctx.ownerId,{direction:input.direction},input.expectedVersion);return {ok:true,changed:true,domain:'profile' as const,status:'applied',summary:'目标方向已更新',entityId:goal.id,version:goal.version,data:{goal}};}
 }
+
+
+
+
+
+
+
+
