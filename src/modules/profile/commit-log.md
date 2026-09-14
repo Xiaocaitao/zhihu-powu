@@ -39,3 +39,10 @@
 - PostgreSQL Repository 在携带 `expectedVersion` 时先确认目标记录存在且版本一致，避免不存在记录被错误插入。
 - PostgreSQL 返回值显式映射为公共 DTO，去除数据库字段名和内部 `ownerId` 泄漏。
 - Profile 独立类型检查与 10 项单元测试全部通过。
+
+## 2026-09-14 · 目标更新输入兼容适配
+
+- 将架构文档规定的 `{ goalType: "target_direction", value: { direction } }` 作为标准目标更新结构。
+- 在 Profile Tool 适配层兼容 main 历史调用使用的 `{ direction }`，统一转换后再进入 DomainCommand 和 Service。
+- 保持公共 CapabilityResult、可信上下文和版本校验语义不变。
+- Profile 独立类型检查通过，10 项单元测试全部通过。

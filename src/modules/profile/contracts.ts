@@ -65,9 +65,11 @@ export type SaveProfileFactInput = ProfileFactPayload & {
   expectedVersion?: number;
 }
 export interface UpdateUserGoalInput {
-  direction: string | null;
+  goalType: "target_direction";
+  value: { direction: string | null };
   expectedVersion?: number;
 }
+export type LegacyUpdateUserGoalInput = { direction: string | null; expectedVersion?: number };
 
 const nonEmpty = z.string().trim().min(1);
 export const getUserProfileInputSchema = z.object({ sections: z.array(z.enum(profileSections)).optional() });
@@ -88,4 +90,7 @@ export const saveProfileFactInputSchema = z.object({
   evidenceRef: z.object({ evidenceId: nonEmpty, evaluatedAt: nonEmpty }).optional(),
   expectedVersion: z.number().int().positive().optional(),
 });
-export const updateUserGoalInputSchema = z.object({ direction: z.string().trim().nullable(), expectedVersion: z.number().int().positive().optional() });
+export const updateUserGoalInputSchema = z.union([
+  z.object({ goalType: z.literal("target_direction"), value: z.object({ direction: z.string().trim().nullable() }), expectedVersion: z.number().int().positive().optional() }),
+  z.object({ direction: z.string().trim().nullable(), expectedVersion: z.number().int().positive().optional() }),
+]);

@@ -567,3 +567,97 @@ A 负责该目录、迁移、业务校验、测试和 README。公共契约、Ag
 Profile 不自行定义全局事件协议。队长将事实或目标变更映射到公共 resource/change；使用真实 entityId 及对应版本，不用单条事实版本伪装整体画像版本。
 
 交付检查覆盖：画像八类事实与目标方向读写、六个分区查询、完善度、四个工具与 Service 一致、用户隔离、缺失值、版本冲突、并发首建、重复命令、事务失败回滚，以及 B/C/D 的输入输出联调。README 说明模块职责、函数和 Tool 清单、调用示例即可。
+
+## 六、基于 main 分支的项目级增量契约
+
+本节记录 main 分支在本架构文档形成后补充的项目级公共约束和联动设计。它们属于架构文档的增量内容；Profile 原有领域契约、字段、接口和规格仍以本文件前文为准。
+
+### 6.1 公共上下文与能力返回
+
+Profile 不自定义项目级上下文或返回协议，直接使用 main 的公共定义：
+
+```ts
+type ModuleContext = {
+  ownerId: string;
+  sessionId?: string;
+  requestId?: string;
+  signal?: AbortSignal;
+};
+
+type CapabilityContext = ModuleContext & {
+  requestId: string;
+  operationKey: string;
+  sourceMessageId?: string;
+  timeZone?: string;
+};
+
+type DomainCommand<T> = {
+  context: CapabilityContext;
+  payload: T;
+  expectedVersion?: number;
+  idempotencyKey: string;
+};
+
+type CapabilityResult<T = unknown> = {
+  ok: boolean;
+  changed: boolean;
+  domain: string;
+  entityId?: string;
+  version?: number;
+  status: "read" | "applied" | "draft_created" | "confirmation_required" | "rejected";
+  summary: string;
+  data?: T;
+  error?: {
+    code: "NOT_FOUND" | "FORBIDDEN" | "INVALID_ARGUMENT" | "INVALID_STATE"
+      | "VERSION_CONFLICT" | "DUPLICATE_REQUEST" | "CONFIRMATION_REQUIRED"
+      | "DEPENDENCY_UNAVAILABLE";
+    message: string;
+    retryable: boolean;
+    fields?: string[];
+  };
+};
+```
+
+`ownerId`、`requestId`、`operationKey`、`sessionId` 和幂等键由可信宿主或 Agent 编排层注入，不能由模型业务参数伪造。Profile 写入结果的 `domain` 固定为 `profile`；不新增公共状态、错误码或全局返回结构。
+
+### 6.2 Agent 统一接入方式
+
+main 的统一 Agent 运行时通过 `DomainCapability` 接收模块能力。Profile 只提供能力工厂，不修改总注册表、Agent Runtime、Pi 适配、聊天模块或全局 SSE：
+
+```ts
+createProfileCapabilities(service: ProfileApplication): DomainCapability[]
+```
+
+四个工具仍保持架构文档第四部分的名称和职责：`get_user_profile`、`get_profile_completion`、`save_profile_fact`、`update_user_goal`。Query Tool 返回 `status: "read"`、`changed: false`；Command Tool 将业务输入放入 `DomainCommand.payload`，将 `expectedVersion` 和幂等键放在命令层，由 Service 执行业务校验。工具不得直接访问数据库或复制 Profile 业务逻辑。
+
+### 6.3 成长空间统一读写链路
+
+main 将成长空间四个业务域统一纳入 Agent 链路：
+
+```text
+首页聊天 → Agent Loop → Profile Tool → Profile Service → Repository/数据库
+                                      ↓
+                              domain_update → 成长空间页面刷新
+```
+
+Profile 页面和首页聚合读取服务端真实数据；保存成功后由队长维护的编排层触发统一刷新事件，Profile 不自行定义全局事件协议。前端不得通过本地计算、默认业务数据或绕过 Agent 的直连接口伪造 Profile 结果。
+
+### 6.4 身份、会话与持久化上下文
+
+main 的服务端身份策略要求：已登录用户优先使用知乎 OAuth `uid`；未登录用户使用服务端生成并持久化的匿名身份。Profile 的所有查询、写入、日志和幂等回执都必须按可信 `ownerId` 隔离，不能仅依赖浏览器传入的用户标识。`sessionId` 用于会话范围，不能替代 Profile 的长期 `ownerId`。
+
+### 6.5 服务端回读与前端联动
+
+Profile 写入成功后，页面应通过主应用已有的成长空间查询链路重新读取 Profile 和完善度，展示服务端回显的事实、目标和缺失项。前端只负责采集、透传、解析 SSE/JSON 和展示，不重复实现 Profile 完善度、版本或状态判断。
+
+### 6.6 与 main 其他模块的联动边界
+
+- Career 负责职业方向、岗位、企业、匹配和差距分析；Profile 只提供画像事实和目标方向。
+- Learning 负责学习计划、阶段、任务、反馈和调整；Profile 只提供长期学习条件和偏好。
+- Evidence & Interview 负责原始学习记录、成果、测验、证据和面试；Profile 只接收经过可信调用映射的摘要和证据引用。
+- Knowledge 负责文档、切分、检索和知识库；知识库内容不能自动写成用户已掌握内容。
+- 队长负责 Tool 总注册、Agent Loop、提示词、HTTP、SSE、首页聚合和最终部署。
+
+### 6.7 main 增量后的验证要求
+
+除本文件原有 Profile 验收项外，必须补充验证：公共 `DomainCommand` 和 `CapabilityResult` 兼容、四个 Tool 统一注册可用、可信 owner/session/request 上下文隔离、保存后服务端回读、`domain_update` 后页面刷新，以及不修改队长维护目录。
