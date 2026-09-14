@@ -72,6 +72,18 @@ test("模型适配器校验结构、题量与技能范围", async () => {
   }), (error: unknown) => error instanceof GenerationError && !error.retryable);
 });
 
+test("面试题兼容模型常见的 result/question 字段包装", async () => {
+  const generation = createLlmEvidenceGeneration(createLlmInvoker(async () => ({
+    result: { questions: [{ type: "项目说明", question: "请介绍一个项目中的关键取舍" }] },
+  })));
+  const plan = await generation.buildInterview({
+    target: { kind: "project", project: { title: "项目", goal: "目标" } }, difficulty: null, questionCount: 1,
+    focus: null, skills: [], requirements: null, project: { title: "项目", goal: "目标", contribution: null }, baseline: null,
+  });
+  assert.equal(plan.questions[0].category, "project");
+  assert.equal(plan.questions[0].prompt, "请介绍一个项目中的关键取舍");
+});
+
 test("未配置模型时返回依赖不可用，而不是固定回复", async () => {
   const generation = createLlmEvidenceGeneration(unavailableLlmInvoker);
   await assert.rejects(generation.buildInterview({

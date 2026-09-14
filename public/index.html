@@ -217,11 +217,25 @@
 
       /* ------------------------------- 模拟面试 ------------------------------- */
       const interview = { session: null, target: null, count: 5, focus: '', ready: false };
+      function ensureInterviewProjectFields() {
+        const anchor = document.querySelector('#interview-project-field');
+        if (!anchor || document.querySelector('#interview-target-project-title')) return;
+        const make = (id, labelText, type = 'input') => { const label = document.createElement('label'); label.id = `${id}-field`; label.hidden = true; label.textContent = labelText; const control = document.createElement(type === 'textarea' ? 'textarea' : 'input'); control.id = id; control.maxLength = type === 'textarea' ? 2000 : 200; control.placeholder = type === 'textarea' ? '可选：面试时希望重点追问的本人工作' : (id.endsWith('title') ? '例如：个人知识库应用' : '这个项目要解决什么问题'); label.append(control); anchor.after(label); return label; };
+        make('interview-target-project-title', '手填项目名称');
+        make('interview-target-project-goal', '手填项目目标');
+        make('interview-target-project-contribution', '本人贡献（可选）', 'textarea');
+      }
+      function syncInterviewProjectFields() {
+        const kind = document.querySelector('#interview-target-kind')?.value;
+        const manual = kind === 'project' && document.querySelector('#interview-target-project')?.value === '__manual__';
+        for (const id of ['#interview-project-title-field', '#interview-project-goal-field', '#interview-project-contribution-field', '#interview-target-project-title-field', '#interview-target-project-goal-field', '#interview-target-project-contribution-field']) { const el = document.querySelector(id); if (el) el.hidden = kind !== 'project' || (id.includes('target-project-') ? !manual : false); }
+      }
       async function prepareInterviewTargets() {
         if (interview.ready) return;
         const jobSelect = document.querySelector('#interview-target-job');
         const skillSelect = document.querySelector('#interview-target-skill');
         const projectSelect = document.querySelector('#interview-target-project');
+        ensureInterviewProjectFields();
         try {
           const jobs = await json('/api/career/jobs?limit=50');
           fill(jobSelect, (jobs.items || []).map(job => ({ value: job.id, label: job.companyName ? `${job.title} · ${job.companyName}` : job.title })), '请选择目标岗位');
@@ -231,7 +245,7 @@
           const records = await json('/api/evidence/records?limit=50');
           const projects = new Map();
           for (const record of (records.page?.items || [])) if (record.projectId) projects.set(record.projectId, record.title);
-          fill(projectSelect, [...projects].map(([id, title]) => ({ value: id, label: `${title}（${id}）` })), '请选择项目');
+          fill(projectSelect, [...projects].map(([id, title]) => ({ value: id, label: `${title}（${id}）` })).concat([{ value: '__manual__', label: '手动填写项目' }]), '请选择项目');
         } catch { fill(projectSelect, [], '项目读取失败'); }
         const kindSelect = document.querySelector('#interview-target-kind');
         const syncKind = () => {
@@ -239,8 +253,9 @@
           document.querySelector('#interview-job-field').hidden = kind !== 'job';
           document.querySelector('#interview-skill-field').hidden = kind !== 'skills';
           document.querySelector('#interview-project-field').hidden = kind !== 'project';
+          syncInterviewProjectFields();
         };
-        kindSelect.addEventListener('change', syncKind); syncKind();
+        kindSelect.addEventListener('change', syncKind); projectSelect.addEventListener('change', syncInterviewProjectFields); syncKind();
         interview.ready = true;
       }
       function selectedTarget() {
@@ -248,7 +263,15 @@
         if (kind === 'job') { const id = document.querySelector('#interview-target-job').value; return id ? { kind, jobId: id } : null; }
         if (kind === 'skills') { const id = document.querySelector('#interview-target-skill').value; return id ? { kind, skillIds: [id] } : null; }
         const id = document.querySelector('#interview-target-project').value;
-        return id ? { kind, projectId: id } : null;
+        if (!id) return null;
+        if (id === '__manual__') {
+          const title = document.querySelector('#interview-target-project-title').value.trim();
+          const goal = document.querySelector('#interview-target-project-goal').value.trim();
+          const contribution = document.querySelector('#interview-target-project-contribution').value.trim();
+          if (!title || !goal) return null;
+          return { kind, project: { title, goal, ...(contribution ? { contribution } : {}) } };
+        }
+        return { kind, projectId: id };
       }
       async function startInterview(options = {}) {
         const hint = document.querySelector('#interview-scope-hint');
@@ -291,7 +314,7 @@
         interview.session = session;
         status.textContent = statusText[session.status] || session.status;
         const target = session.target || {};
-        scope.textContent = target.kind === 'job' ? `本场范围：岗位 ${target.jobId}` : target.kind === 'skills' ? `本场范围：能力 ${(target.skillIds || []).join('、')}` : `本场范围：项目 ${target.projectId}`;
+        scope.textContent = target.kind === 'job' ? `本场范围：岗位 ${target.jobId}` : target.kind === 'skills' ? `本场范围：能力 ${(target.skillIds || []).join('、')}` : `本场范围：项目 ${target.projectId || target.project?.title || '手填项目'}`;
         if (session.status === 'preparation_failed') {
           title.textContent = '题目生成失败';
           question.textContent = (session.coverage?.missing || []).map(item => item.reason).join('；') || '生成服务暂时不可用。';
@@ -415,6 +438,22 @@
             fill(materialSelect, (files.files || []).map(file => ({ value: file.id, label: file.original_name })), '不引用材料');
           } catch { fill(materialSelect, [], '材料读取失败'); }
         }
+        const kind = document.querySelector('#record-kind');
+        if (kind && !document.querySelector('#record-project-source')) {
+          const sourceLabel = document.createElement('label'); sourceLabel.textContent = '关联项目';
+          const source = document.createElement('select'); source.id = 'record-project-source';
+          fill(source, [{ value: 'none', label: '不关联项目' }, { value: 'existing', label: '选择已有项目' }, { value: 'manual', label: '手动填写项目' }], '选择项目方式');
+          sourceLabel.append(source); kind.closest('label')?.after(sourceLabel);
+          const existingLabel = document.createElement('label'); existingLabel.id = 'record-project-existing-field'; existingLabel.hidden = true; existingLabel.textContent = '已有项目';
+          const existing = document.createElement('select'); existing.id = 'record-project-existing'; existingLabel.append(existing); sourceLabel.after(existingLabel);
+          try {
+            const data = await json('/api/evidence/records?limit=100');
+            const projects = new Map((data.page?.items || []).filter(item => item.projectId).map(item => [item.projectId, item.title]));
+            fill(existing, [...projects].map(([value, label]) => ({ value, label })), '请选择已有项目');
+          } catch { fill(existing, [], '项目读取失败'); }
+          source.addEventListener('change', syncProjectFields);
+        }
+        syncProjectFields();
       }
       async function refreshRecords() {
         const list = document.querySelector('#record-list');
@@ -608,6 +647,18 @@
           if (!contribution && !contributionPending) { hint.textContent = '请填写本人贡献，或勾选“本人贡献待补充”。'; return; }
           body.project = { title: projectTitle, goal: projectGoal, contributionPending, ...(contribution ? { contribution } : {}) };
         }
+        const projectSource = document.querySelector('#record-project-source')?.value || 'none';
+        if (projectSource === 'existing') {
+          const projectId = document.querySelector('#record-project-existing')?.value;
+          if (!projectId) { hint.textContent = '请选择已有项目，或选择“不关联项目”。'; return; }
+          body.project = { projectId };
+        } else if (projectSource === 'manual' && kind !== 'project_outcome') {
+          const projectTitle = document.querySelector('#record-project-title').value.trim();
+          const projectGoal = document.querySelector('#record-project-goal').value.trim();
+          const contribution = document.querySelector('#record-project-contribution').value.trim();
+          if (!projectTitle || !projectGoal) { hint.textContent = '手动关联项目需要填写项目名称与目标。'; return; }
+          body.project = { title: projectTitle, goal: projectGoal, contributionPending: !contribution, ...(contribution ? { contribution } : {}) };
+        }
         if (!body.title || !body.content) { hint.textContent = '标题和内容不能为空。'; return; }
         try {
           await json('/api/evidence/records', { method: 'POST', body: JSON.stringify(body) });
@@ -617,10 +668,11 @@
         } catch (error) { hint.textContent = error.message; }
       }
       function syncProjectFields() {
-        const isProject = document.querySelector('#record-kind').value === 'project_outcome';
-        for (const id of ['#record-project-title-field', '#record-project-goal-field', '#record-project-contribution-field', '#record-project-pending-field']) {
-          document.querySelector(id).hidden = !isProject;
-        }
+        const isOutcome = document.querySelector('#record-kind').value === 'project_outcome';
+        const source = document.querySelector('#record-project-source')?.value || 'none';
+        const isManual = isOutcome || source === 'manual';
+        for (const id of ['#record-project-title-field', '#record-project-goal-field', '#record-project-contribution-field', '#record-project-pending-field']) { const el = document.querySelector(id); if (el) el.hidden = !isManual; }
+        const existing = document.querySelector('#record-project-existing-field'); if (existing) existing.hidden = source !== 'existing' || isOutcome;
       }
 
       // 页面进入时会调用这两个函数；本脚本的实现覆盖上面的旧版本。

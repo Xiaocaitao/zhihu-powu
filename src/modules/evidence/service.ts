@@ -819,8 +819,10 @@ export class EvidenceService {
       revision = job.value.revision;
       skillIds = unique([...skillIds, ...job.value.skillRefs.map(skill => skill.skillId)]);
     }
-    let project: { title: string; goal: string; contribution: string | null } | null = null;
-    const projectId = target.kind === "project" ? target.projectId : target.projectId;
+    let project: { title: string; goal: string; contribution: string | null } | null = target.project
+      ? { title: target.project.title, goal: target.project.goal, contribution: target.project.contribution ?? null }
+      : null;
+    const projectId = target.projectId;
     if (projectId) {
       const found = state.projects.find(item => item.projectId === projectId && item.ownerId === ctx.ownerId);
       if (!found) return { ok: false, code: "NOT_FOUND", message: "项目不存在或不可访问" };
@@ -828,7 +830,8 @@ export class EvidenceService {
       project = { title: found.title, goal: found.goal, contribution: record?.contribution ?? null };
       if (!project.contribution) return { ok: false, code: "INVALID_ARGUMENT", message: "该项目缺少本人贡献说明，请先补充项目成果" };
     }
-    if (!skillIds.length) return { ok: false, code: "INVALID_ARGUMENT", message: "请提供明确的训练能力范围" };
+    // 岗位要求或项目资料可能只有自然语言，仍允许通用训练；专项能力模式
+    // 的 schema 已保证至少有一个 skillId。
     const skills = await this.resolveSkills(skillIds);
     if (skills.missingIds.length) {
       return { ok: false, code: "INVALID_ARGUMENT", message: `以下能力标识不在共享目录中：${skills.missingIds.join("、")}` };

@@ -188,11 +188,39 @@ const baseSystem = [
 function parseJson(text: string): unknown {
   const trimmed = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   try { return JSON.parse(trimmed); }
-  catch { throw new GenerationError("GENERATION_FAILED", "生成结果不是合法 JSON", true); }
+  catch {
+    // Some providers prepend a short sentence despite the JSON-only prompt.
+    // Extract one complete object and still apply the strict schema afterwards.
+    const start = trimmed.indexOf("{"); const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try { return JSON.parse(trimmed.slice(start, end + 1)); } catch { /* fall through */ }
+    }
+    throw new GenerationError("GENERATION_FAILED", "生成结果不是合法 JSON", true);
+  }
+}
+
+/** Models sometimes wrap structured output or use a common synonym for prompt.
+ * Normalize only the interview plan envelope; all fields still go through the
+ * strict schema below so unsupported content is rejected explicitly. */
+function normalizeInterviewPlan(value: unknown): unknown {
+  let current = value as any;
+  for (let i = 0; i < 2 && current && typeof current === "object"; i++) {
+    if (current.result && typeof current.result === "object") current = current.result;
+    else if (current.data && typeof current.data === "object") current = current.data;
+    else break;
+  }
+  if (!current || typeof current !== "object" || !Array.isArray(current.questions)) return current;
+  return {
+    questions: current.questions.map((item: any) => ({
+      category: ({ knowledge: "knowledge", project: "project", expression: "expression", knowledge_understanding: "knowledge", project_explanation: "project", communication: "expression", 知识理解: "knowledge", 项目说明: "project", 表达: "expression" } as Record<string, string>)[String(item.category ?? item.type ?? "expression")] ?? "expression",
+      prompt: item.prompt ?? item.question ?? item.text,
+      skillIds: Array.isArray(item.skillIds) ? item.skillIds : [],
+    })),
+  };
 }
 
 export function createLlmEvidenceGeneration(invoker: LlmInvoker): EvidenceGenerationPort {
-  const run = async <T>(systemPrompt: string, userInput: unknown, schema: z.ZodType<T>): Promise<T> => {
+  const run = async <T>(systemPrompt: string, userInput: unknown, schema: z.ZodType<T>, normalizeOutput?: (value: unknown) => unknown): Promise<T> => {
     let raw: unknown;
     try {
       raw = await invoker.generateStructured<unknown>({
@@ -207,7 +235,7 @@ export function createLlmEvidenceGeneration(invoker: LlmInvoker): EvidenceGenera
       throw new GenerationError("GENERATION_FAILED", "生成服务暂时不可用", true);
     }
     const parsed = typeof raw === "string" ? parseJson(raw) : raw;
-    const result = schema.safeParse(parsed);
+    const result = schema.safeParse(normalizeOutput ? normalizeOutput(parsed) : parsed);
     if (!result.success) throw new GenerationError("GENERATION_FAILED", "生成结果不符合约定结构", true);
     return result.data;
   };
@@ -218,6 +246,7 @@ export function createLlmEvidenceGeneration(invoker: LlmInvoker): EvidenceGenera
         `请生成 ${input.questionCount} 道${input.difficulty ?? "适中"}难度的面试题，覆盖知识理解、项目说明和表达三类。`,
         { target: input.target, skills: input.skills, requirements: input.requirements, project: input.project, baseline: input.baseline, focus: input.focus },
         planSchema,
+        normalizeInterviewPlan,
       );
       if (data.questions.length !== input.questionCount) {
         throw new GenerationError("GENERATION_FAILED", "生成题目数量与要求不一致", true);

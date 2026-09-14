@@ -3,7 +3,7 @@ import test from "node:test";
 import { GenerationError } from "../src/modules/evidence/generation.ts";
 import type { EvidenceState } from "../src/modules/evidence/service.ts";
 import type { SourceChange } from "../src/modules/evidence/ports.ts";
-import { activityInput, KNOWN_SKILL, ownerContext, serviceWith } from "./support/evidence-fixtures.ts";
+import { activityInput, defaultPorts, KNOWN_SKILL, ownerContext, serviceWith } from "./support/evidence-fixtures.ts";
 
 const emptyState = (): EvidenceState => ({ records: [], projects: [], interviews: [], assessments: [], reviews: [] });
 const ctx = ownerContext();
@@ -161,6 +161,21 @@ test("训练范围必须来自真实岗位、能力或项目", async () => {
   assert.equal(missingJob.error?.code, "NOT_FOUND");
   const missingProject = await service.startInterview(ctx, state, { target: { kind: "project", projectId: "11111111-1111-4111-8111-111111111111" } });
   assert.equal(missingProject.error?.code, "NOT_FOUND");
+});
+
+test("项目训练支持手填项目资料，岗位没有结构化能力时仍可进行通用训练", async () => {
+  const service = serviceWith();
+  const inline = await service.startInterview(ctx, emptyState(), {
+    target: { kind: "project", project: { title: "个人知识库", goal: "整理学习资料" } }, questionCount: 1,
+  });
+  assert.equal(inline.ok, true);
+  assert.equal(inline.data!.interview.status, "active");
+  assert.equal(inline.data!.interview.target.project?.title, "个人知识库");
+  const ports = defaultPorts();
+  ports.career = { getJobRequirements: async () => ({ value: { jobId: "job-1", title: "后端实习", requirements: "熟悉服务端开发", skillRefs: [], revision: "1" }, coverage: { complete: true, missing: [], observedAt: new Date().toISOString() } }) };
+  const job = await serviceWith({ ports }).startInterview(ctx, emptyState(), { target: { kind: "job", jobId: "job-1" }, questionCount: 1 });
+  assert.equal(job.ok, true);
+  assert.equal(job.data!.interview.status, "active");
 });
 
 test("题目生成失败时保留会话与可恢复提示", async () => {

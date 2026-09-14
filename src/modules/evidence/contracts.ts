@@ -171,9 +171,9 @@ export const reviewQuerySchema = z.union([
 
 /* ---------------------------- interviews -------------------------- */
 export const interviewTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("job"), jobId: idSchema, skillIds: z.array(idSchema).max(20).optional(), projectId: uuidSchema.optional() }).strict(),
-  z.object({ kind: z.literal("skills"), skillIds: z.array(idSchema).min(1).max(20), projectId: uuidSchema.optional() }).strict(),
-  z.object({ kind: z.literal("project"), projectId: uuidSchema, skillIds: z.array(idSchema).max(20).optional() }).strict(),
+  z.object({ kind: z.literal("job"), jobId: idSchema, skillIds: z.array(idSchema).max(20).optional(), projectId: uuidSchema.optional(), project: z.object({ title: z.string().trim().min(1).max(200), goal: z.string().trim().min(1).max(2000), contribution: z.string().trim().min(1).max(2000).optional() }).strict().optional() }).strict(),
+  z.object({ kind: z.literal("skills"), skillIds: z.array(idSchema).min(1).max(20), projectId: uuidSchema.optional(), project: z.object({ title: z.string().trim().min(1).max(200), goal: z.string().trim().min(1).max(2000), contribution: z.string().trim().min(1).max(2000).optional() }).strict().optional() }).strict(),
+  z.object({ kind: z.literal("project"), projectId: uuidSchema.optional(), project: z.object({ title: z.string().trim().min(1).max(200), goal: z.string().trim().min(1).max(2000), contribution: z.string().trim().min(1).max(2000).optional() }).strict().optional(), skillIds: z.array(idSchema).max(20).optional() }).strict().refine(value => Boolean(value.projectId) !== Boolean(value.project), "项目训练必须选择已有项目或填写项目资料"),
 ]);
 export type InterviewTarget = z.infer<typeof interviewTargetSchema>;
 

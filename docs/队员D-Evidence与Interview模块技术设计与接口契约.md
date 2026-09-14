@@ -257,9 +257,11 @@ type ReviewDTO = {
 
 ```ts
 type InterviewTarget =
-  | { kind: "job"; jobId: ExternalId; skillIds?: ExternalId[]; projectId?: EntityId }
-  | { kind: "skills"; skillIds: ExternalId[]; projectId?: EntityId }
-  | { kind: "project"; projectId: EntityId; skillIds?: ExternalId[] };
+  | { kind: "job"; jobId: ExternalId; skillIds?: ExternalId[]; projectId?: EntityId; project?: InlineProject }
+  | { kind: "skills"; skillIds: ExternalId[]; projectId?: EntityId; project?: InlineProject }
+  | { kind: "project"; projectId?: EntityId; project?: InlineProject; skillIds?: ExternalId[] };
+
+`InlineProject` 为 `{title, goal, contribution?}`。项目训练必须提供 `projectId` 或 `project` 其中一个；岗位与项目训练没有结构化能力标识时仍可进行通用文字训练，专项能力模式仍要求至少一个 `skillId`。
 type QuestionDTO = {
   questionId: EntityId;
   ordinal: number;
@@ -333,7 +335,7 @@ difficulty 只在 preparing 或 preparation_failed 且尚未确定难度时允�
 - `recovery`：`{toolName, entityId, action, retryable}`。action 为用户可理解的说明，不包含密钥、内部错误栈或可执行代码。
 - amend 的 materialRefs、skillIds 为明确替换；空数组表示清空。durationMinutes、taskId 在 changes 中可为 null 表示清空，省略表示不变。创建时 durationMinutes 省略保存 null。
 - 首版 project_outcome 必须提供 project；关联已有项目时读取其贡献背景，本次 content 仍应说明本次产出。不清楚贡献时返回 missingInformation，不能评为个人已验证成果。
-- InterviewTarget 的 skills 模式要求 skillIds 非空；project 模式必须有可访问的本模块项目。明确的“JavaScript”等自然语言能力先由共享能力查询解析为标识；解析能力未接入时返回所需信息，不能随机生成 skillId。
+- InterviewTarget 的 skills 模式要求 skillIds 非空；project 模式可使用可访问的本模块项目，也可直接提交本场手填的项目资料。明确的“JavaScript”等自然语言能力先由共享能力查询解析为标识；解析能力未接入时返回所需信息，不能随机生成 skillId。岗位或项目缺少结构化能力标识时允许进行通用文字训练，并在范围中保留资料覆盖说明。
 - expectedVersion 在修改已有记录时必需：页面通过命令元信息回传其实际读到的版本，Agent 适配层使用本轮已读取对象的版本。它是前置条件，不是模型可以自称的新版本；宿主也不能在写入前临时读取最新版来掩盖用户基于旧内容进行编辑的冲突。面试回答以当前题及唯一约束判并发，避免反馈写入导致无关版本冲突。
 - 首版已撤回记录不支持原地恢复，用户需要重新记录时形成新对象并引用旧记录；后续若增加恢复操作，需要单独定义失效评估如何处理。
 
