@@ -9,6 +9,7 @@ import type { ChatRuntime, Emit, Transcript } from "../../modules/chat/contracts
 import type { CapabilityContext } from "../../contracts/capability.ts";
 import type { CapabilityRegistry } from "../tools/registry.ts";
 import { adaptDomainCapabilities } from "../tools/domain-adapter.ts";
+import { deriveLearningWorkflowState, workflowHint } from "../workflows/learning-workflow.ts";
 
 export function explicitlyConfirms(toolName: string, message: string): boolean {
   const text = message.trim();
@@ -52,6 +53,7 @@ export class PiChatRuntime implements ChatRuntime {
       sessionId: input.sessionId,
       ownerId: input.context?.ownerId,
       requestId: input.context?.requestId,
+      workflowHint: workflowHint(deriveLearningWorkflowState(input.message, input.history)),
       ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     }, this.promptContext);
     // The current chat message is the trusted host's approval signal. Tool
