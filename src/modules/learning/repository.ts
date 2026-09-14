@@ -12,6 +12,9 @@ export interface LearningRepository {
   listAdjustments?(ownerId: string, planId: string): Promise<LearningAdjustment[]>;
   getIdempotency?(ownerId: string, key: string): Promise<LearningIdempotencyRecord | null>;
   saveIdempotency?(ownerId: string, key: string, record: LearningIdempotencyRecord): Promise<void>;
+  savePlanChange?(plan: LearningPlan, adjustment?: LearningAdjustment): Promise<void>;
+  savePlanAndFeedback?(plan: LearningPlan, feedback: LearningFeedback): Promise<void>;
+  savePlans?(plans: LearningPlan[]): Promise<void>;
 }
 
 export class MemoryLearningRepository implements LearningRepository {
@@ -35,6 +38,9 @@ export class MemoryLearningRepository implements LearningRepository {
   async listAdjustments(ownerId: string, planId: string) { return (this.adjustments.get(planId) ?? []).filter(item => item.ownerId === ownerId).map(clone); }
   async getIdempotency(ownerId: string, key: string) { const record = this.idempotency.get(`${ownerId}:${key}`); return record ? clone(record) : null; }
   async saveIdempotency(ownerId: string, key: string, record: LearningIdempotencyRecord) { this.idempotency.set(`${ownerId}:${key}`, clone(record)); }
+  async savePlanChange(plan: LearningPlan, adjustment?: LearningAdjustment) { await this.savePlan(plan); if (adjustment) await this.saveAdjustment(adjustment); }
+  async savePlanAndFeedback(plan: LearningPlan, feedback: LearningFeedback) { await this.savePlan(plan); await this.saveFeedback(feedback); }
+  async savePlans(plans: LearningPlan[]) { for (const plan of plans) await this.savePlan(plan); }
 }
 
 export function taskById(plan: LearningPlan, taskId: string): LearningTask | null { for (const stage of plan.stages) { const task = stage.tasks.find(x => x.id === taskId); if (task) return task; } return null; }

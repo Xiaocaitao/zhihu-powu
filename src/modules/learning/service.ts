@@ -68,7 +68,10 @@ export class LearningService implements LearningApplication {
     const stateError = this.assertWritable(plan, false); if (stateError) return stateError;
     if (command.payload.taskId && !taskById(plan, command.payload.taskId)) return this.reject("反馈任务不属于该计划", "NOT_FOUND");
     const feedback: LearningFeedback = { id: newId(), ownerId: command.context.ownerId, ...command.payload, createdAt: new Date().toISOString() };
-    plan.version++; plan.updatedAt = feedback.createdAt; await this.repo.savePlan(plan); await this.repo.saveFeedback(feedback); return await this.applied({ feedback }, "学习反馈已记录", feedback.id, plan.version, command, "record_learning_feedback");
+    plan.version++; plan.updatedAt = feedback.createdAt;
+    if (this.repo.savePlanAndFeedback) await this.repo.savePlanAndFeedback(plan, feedback);
+    else { await this.repo.savePlan(plan); await this.repo.saveFeedback(feedback); }
+    return await this.applied({ feedback }, "学习反馈已记录", feedback.id, plan.version, command, "record_learning_feedback");
   }
 
   async adjustLearningPlan(command: DomainCommand<AdjustPlanInput>) {
@@ -80,9 +83,10 @@ export class LearningService implements LearningApplication {
     for (const operation of command.payload.operations) {
       const error = this.applyAdjustment(plan, operation, summary); if (error) return error;
     }
-    const fromVersion = plan.version; plan.version++; plan.updatedAt = new Date().toISOString(); this.refreshProgress(plan); await this.repo.savePlan(plan);
+    const fromVersion = plan.version; plan.version++; plan.updatedAt = new Date().toISOString(); this.refreshProgress(plan);
     const adjustment = { id: newId(), ownerId: command.context.ownerId, planId: plan.id, fromVersion, toVersion: plan.version, trigger: command.payload.trigger, reason: command.payload.reason, changeSummary: summary, createdAt: plan.updatedAt };
-    await this.repo.saveAdjustment?.(adjustment);
+    if (this.repo.savePlanChange) await this.repo.savePlanChange(plan, adjustment);
+    else { await this.repo.savePlan(plan); await this.repo.saveAdjustment?.(adjustment); }
     return await this.applied({ plan: clone(plan), adjustment: command.payload }, "学习计划已调整", plan.id, plan.version, command, "adjust_learning_plan");
   }
 
@@ -91,9 +95,17 @@ export class LearningService implements LearningApplication {
     const plan = await this.repo.getPlan(command.context.ownerId, command.payload.planId); if (!plan) return this.reject("学习计划不存在", "NOT_FOUND");
     const versionError = this.assertVersion(command, plan, command.payload.expectedPlanVersion); if (versionError) return versionError;
     if (plan.mode !== "trial" || !["draft", "active"].includes(plan.status)) return this.reject("当前计划不可确认", "INVALID_STATE");
-    for (const existing of (this.repo.listPlans ? await this.repo.listPlans(command.context.ownerId) : [])) if (existing.mode === "final" && existing.status === "active") { existing.status = "archived"; await this.repo.savePlan(existing); }
+    const plansToSave: LearningPlan[] = [];
+    for (const existing of (this.repo.listPlans ? await this.repo.listPlans(command.context.ownerId) : [])) if (existing.mode === "final" && existing.status === "active") {
+      existing.status = "archived";
+      existing.version++;
+      existing.updatedAt = new Date().toISOString();
+      plansToSave.push(existing);
+    }
     if (command.payload.keepUnfinishedTasks === false) for (const task of plan.stages.flatMap(stage => stage.tasks)) if (task.status !== "completed") task.status = "paused";
-    plan.mode = "final"; plan.status = "active"; plan.version++; plan.updatedAt = new Date().toISOString(); await this.repo.savePlan(plan);
+    plan.mode = "final"; plan.status = "active"; plan.version++; plan.updatedAt = new Date().toISOString(); plansToSave.push(plan);
+    if (this.repo.savePlans) await this.repo.savePlans(plansToSave);
+    else for (const planToSave of plansToSave) await this.repo.savePlan(planToSave);
     return await this.applied({ plan: clone(plan) }, "学习计划已确认并激活", plan.id, plan.version, command, "confirm_learning_plan");
   }
 
@@ -103,7 +115,7 @@ export class LearningService implements LearningApplication {
 
   private async findActiveFinal(ownerId: string) { const plans = this.repo.listPlans ? await this.repo.listPlans(ownerId) : []; return plans.find(plan => plan.mode === "final" && plan.status === "active") ?? null; }
   private assertWritable(plan: LearningPlan, allowPaused = true) { if (!writableStatuses.has(plan.status) || (!allowPaused && plan.status === "paused")) return this.reject("当前学习计划状态不允许此操作", "INVALID_STATE"); return null; }
-  private assertVersion(command: DomainCommand<unknown>, plan: LearningPlan, explicit?: number) { const expected = explicit ?? command.expectedVersion ?? (command.payload as { expectedVersion?: number }).expectedVersion; return expected !== undefined && expected !== plan.version ? this.reject("学习计划版本已变化，请刷新后重试", "VERSION_CONFLICT", true) : null; }
+  private assertVersion(command: DomainCommand<unknown>, plan: LearningPlan, explicit?: number) { const expected = explicit ?? command.expectedVersion; return expected !== undefined && expected !== plan.version ? this.reject("学习计划版本已变化，请刷新后重试", "VERSION_CONFLICT", true) : null; }
   private refreshProgress(plan: LearningPlan) { for (const stage of plan.stages) { const tasks = stage.tasks; const completed = tasks.filter(task => task.status === "completed").length; stage.progressPercent = tasks.length ? Math.round(completed / tasks.length * 100) : 0; stage.status = completed === tasks.length ? "completed" : tasks.some(task => task.status === "in_progress") ? "in_progress" : "todo"; } if (plan.stages.length && plan.stages.every(stage => stage.status === "completed")) plan.status = "completed"; }
   private applyAdjustment(plan: LearningPlan, operation: AdjustmentOperation, summary: unknown[]): LearningResult<never> | null {
     if (operation.type === "change_order") { const found = operation.taskIds.map(id => taskById(plan, id)); if (found.some(task => !task)) return this.reject("调整操作包含不存在的任务", "NOT_FOUND"); const stageIds = new Set(found.map(task => task!.stageId)); if (stageIds.size !== 1) return this.reject("调整顺序的任务必须属于同一阶段", "INVALID_ARGUMENT"); found.forEach((task, index) => { task!.priority = index + 1; }); summary.push({ type: operation.type, taskIds: operation.taskIds }); return null; }
