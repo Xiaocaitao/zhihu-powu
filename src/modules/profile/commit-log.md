@@ -137,18 +137,3 @@
 
 - 修正 `/api/growth/profile` 空画像测试：无画像时按 Profile 契约断言 `profile: null`，完善度仍返回 0。
 - 避免测试错误地把空画像当作包含 `facts` 的对象。
-
-## 2026-09-15 · PR 审查问题修正
-
-- 统一架构文档 `includeMissingFields` 字段名，测试脚本纳入 Profile 两个测试文件。
-- 命令适配层将 `expectedVersion` 提升到公共命令顶层，修正乐观并发校验；请求哈希递归排序对象键。
-- Memory Repository 读写边界增加深拷贝，避免外部修改内部状态。
-- 增加证据时间 ISO 8601 校验、每周时长 0–168 边界和空列表事实支持。
-- PostgreSQL 目标首次写入改为冲突拒绝，审计日志增加实体版本唯一索引。
-- Profile 单元测试 19 项通过。
-
-## 2026-09-15 · 修复已执行迁移 checksum 导致的部署启动失败
-
-- 恢复已在生产环境执行过的 `005-profile-audit.sql` 原内容，避免迁移 runner 因 checksum 变化拒绝启动。
-- 新增 `006-profile-audit-constraints.sql`，在独立迁移中清理重复审计版本并建立唯一索引。
-- 保持审计唯一性约束，同时兼容已有数据库的增量升级。
