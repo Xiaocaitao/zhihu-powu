@@ -9,7 +9,7 @@ import type { ChatRuntime, Emit, Transcript } from "../../modules/chat/contracts
 import type { CapabilityContext } from "../../contracts/capability.ts";
 import type { CapabilityRegistry } from "../tools/registry.ts";
 import { adaptDomainCapabilities } from "../tools/domain-adapter.ts";
-import { deriveLearningWorkflowState, workflowHint } from "../workflows/learning-workflow.ts";
+import { deriveLearningWorkflowState, hasZhihuResearch, workflowHint } from "../workflows/learning-workflow.ts";
 
 export function explicitlyConfirms(toolName: string, message: string): boolean {
   const text = message.trim();
@@ -72,6 +72,7 @@ export class PiChatRuntime implements ChatRuntime {
         ...(input.context && this.capabilityRegistry ? adaptDomainCapabilities(this.capabilityRegistry.forContext(input.context), input.context, approve, (name, args) => {
           if (name === "update_learning_task" && learningState !== "task_completed") return { allowed: false, summary: "请先明确说明已完成哪个学习任务及实际用时" };
           if (name === "record_learning_evidence" && learningState !== "evidence_recorded") return { allowed: false, summary: "请先明确要求保存具体学习经历，并提供活动内容和时间" };
+          if (name === "create_learning_plan" && !hasZhihuResearch(input.history)) return { allowed: false, summary: "请先完成知乎经验搜索并保留来源，再创建学习计划" };
           if (name === "create_learning_plan" && (args as { mode?: string })?.mode === "final" && learningState !== "active") return { allowed: false, summary: "首次学习计划必须先保存为 trial 草案，完成试学并明确确认后才能生成正式计划" };
           return { allowed: true, summary: "" };
         }) : []),
