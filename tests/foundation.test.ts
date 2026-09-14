@@ -39,11 +39,20 @@ test("growth prompt maps an explicit skills write to learned_content profile fac
   assert.match(prompt, /factType 固定为 learned_content/);
   assert.match(prompt, /value 使用 \{ items: string\[\] \}/);
   assert.match(prompt, /不要把单纯的技能清单或自我描述改走 Evidence 的 record_learning_evidence/);
-  assert.match(prompt, /此类请求信息足够时必须直接调用一次 record_learning_evidence/);
+  assert.match(prompt, /此类请求信息足够时优先直接调用 record_learning_evidence/);
 });
 
 test("growth prompt keeps first learning plans in trial mode", async () => {
   const prompt = await buildPrompt({ message: "生成学习计划", sessionId: "session-1" });
   assert.match(prompt, /首次生成.*mode=trial/);
   assert.match(prompt, /不要把 final draft 当成可确认计划/);
+});
+
+test("growth prompt defines the learning assistant chain", async () => {
+  const prompt = await buildPrompt({ message: "我要学习 PostgreSQL 性能优化", sessionId: "chain-1" });
+  assert.match(prompt, /优先调用 search_zhihu/);
+  assert.match(prompt, /明确标为 trial 的学习计划草案/);
+  assert.match(prompt, /只有用户明确确认激活时，才调用 confirm_learning_plan/);
+  assert.match(prompt, /先调用 update_learning_task 更新状态/);
+  assert.match(prompt, /同一 taskId 调用 record_learning_evidence/);
 });
