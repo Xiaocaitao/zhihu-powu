@@ -46,7 +46,7 @@ export const recordKindSchema = z.enum([
 export const modelRecordKindSchema = z.enum(["activity", "project_outcome"]);
 
 export const projectInputSchema = z.union([
-  z.object({ projectId: uuidSchema }).strict(),
+  z.object({ projectId: uuidSchema, contribution: z.string().trim().min(1).max(2000).optional(), contributionPending: z.boolean().optional() }).strict(),
   z.object({
     title: z.string().trim().min(1).max(200),
     goal: z.string().trim().min(1).max(2000),
@@ -170,11 +170,17 @@ export const reviewQuerySchema = z.union([
 ]);
 
 /* ---------------------------- interviews -------------------------- */
+const inlineProjectSchema = z.object({
+  title: z.string().trim().min(1).max(200), goal: z.string().trim().min(1).max(2000),
+  contribution: z.string().trim().min(1).max(2000).optional(),
+}).strict();
+const projectContext = { projectId: uuidSchema.optional(), project: inlineProjectSchema.optional() };
 export const interviewTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("job"), jobId: idSchema, skillIds: z.array(idSchema).max(20).optional(), projectId: uuidSchema.optional() }).strict(),
-  z.object({ kind: z.literal("skills"), skillIds: z.array(idSchema).min(1).max(20), projectId: uuidSchema.optional() }).strict(),
-  z.object({ kind: z.literal("project"), projectId: uuidSchema, skillIds: z.array(idSchema).max(20).optional() }).strict(),
-]);
+  z.object({ kind: z.literal("job"), jobId: idSchema, skillIds: skillIdsSchema.optional(), ...projectContext }).strict(),
+  z.object({ kind: z.literal("skills"), skillIds: skillIdsSchema.refine(ids => ids.length > 0), ...projectContext }).strict(),
+  z.object({ kind: z.literal("project"), skillIds: skillIdsSchema.optional(), ...projectContext }).strict(),
+]).refine(value => !(value.projectId && value.project), "已有项目与手填项目不能同时提供")
+  .refine(value => value.kind !== "project" || Boolean(value.projectId || value.project), "项目训练必须选择已有项目或填写项目资料");
 export type InterviewTarget = z.infer<typeof interviewTargetSchema>;
 
 export const startInterviewSchema = z.object({
@@ -328,7 +334,7 @@ export type InterviewDTO = {
   report: ReportDTO | null;
   reportStatus: GenerationStatus;
   coverage: Coverage;
-  targetSnapshot: { revision: string; requirements: string | null; skillRefs: SkillRef[] } | null;
+  targetSnapshot: { revision: string; requirements: string | null; skillRefs: SkillRef[]; title?: string; project?: { title: string; goal: string; contribution: string | null } | null } | null;
   focus: string | null;
   createdAt: string;
   endedAt: string | null;

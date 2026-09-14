@@ -21,6 +21,58 @@ test("chat endpoint forwards raw input and streams text events", async t => {
   const retired = await fetch(`http://127.0.0.1:${address.port}/api/routes`, { method: "POST", body: "{}" }); assert.equal(retired.status, 410);
 });
 
+test("chat SSE strips internal thinking and tool payloads", async t => {
+  const store: ChatStore = {
+    async create() { return { sessionId: "00000000-0000-4000-8000-000000000001", createdAt: new Date().toISOString() }; },
+    async list() { return []; },
+    async begin(_owner, input) { return { sessionId: input.session_id ?? "00000000-0000-4000-8000-000000000001", history: [], finish: async () => {}, release: async () => {} }; },
+    async get() { return []; },
+  };
+  const runtime: ChatRuntime = {
+    async run(_input, emit) {
+      await emit({ type: "thinking_delta", delta: "secret chain of thought" });
+      await emit({ type: "tool_start", tool_call_id: "call-1", tool_name: "save_profile_fact", args: { table: "learning_stages", retryable: false } });
+      await emit({ type: "tool_update", tool_call_id: "call-1", tool_name: "save_profile_fact", update: { error: { code: "DB_SECRET" } } });
+      await emit({ type: "tool_end", tool_call_id: "call-1", tool_name: "save_profile_fact", error: false });
+      await emit({ type: "text_delta", delta: "面向用户的回答" });
+      return [];
+    },
+  };
+  const server = createPowuServer({ chatService: new ChatService(store, runtime) });
+  t.after(() => server.close());
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "你好", request_id: "00000000-0000-4000-8000-000000000002" }) });
+  const text = await response.text();
+  assert.match(text, /event: thinking_delta/);
+  assert.match(text, /event: tool_start/);
+  assert.match(text, /面向用户的回答/);
+  assert.doesNotMatch(text, /secret chain of thought|learning_stages|retryable|DB_SECRET|table/);
+  assert.doesNotMatch(text, /"args"|"update"/);
+});
+
+test("chat SSE maps backend exceptions to a public error", async t => {
+  const store: ChatStore = {
+    async create() { return { sessionId: "00000000-0000-4000-8000-000000000001", createdAt: new Date().toISOString() }; },
+    async list() { return []; },
+    async begin(_owner, input) { return { sessionId: input.session_id ?? "00000000-0000-4000-8000-000000000001", history: [], finish: async () => {}, release: async () => {} }; },
+    async get() { return []; },
+  };
+  const server = createPowuServer({ chatService: new ChatService(store, { async run() { throw new Error("DB relation learning_stages does not exist; retryable=false"); } }) });
+  t.after(() => server.close());
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "你好", request_id: "00000000-0000-4000-8000-000000000002" }) });
+  const text = await response.text();
+  assert.match(text, /event: error/);
+  assert.match(text, /聊天服务暂时不可用，请稍后重试/);
+  assert.doesNotMatch(text, /learning_stages|retryable|relation/);
+});
+
 test("画像读取接口返回 Profile Tool 的真实数据和完善度", async t => {
   const server = createPowuServer({ chatService: new ChatService({ create: async () => ({ sessionId: "00000000-0000-4000-8000-000000000001", createdAt: new Date().toISOString() }), list: async () => [], begin: async () => { throw new Error("unused"); }, get: async () => null }, { run: async () => [] }), capabilityRegistry: createDefaultCapabilityRegistry() }); t.after(() => server.close()); server.listen(0, "127.0.0.1"); await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
   const response = await fetch(`http://127.0.0.1:${address.port}/api/growth/profile`);

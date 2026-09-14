@@ -20,7 +20,7 @@ export function adaptTools(tools: Tool[], allowed: ReadonlySet<string> = publicT
         signal, confirmed,
         onChunk: chunk => onUpdate?.({ content: [{ type: "text", text: JSON.stringify(chunk) }], details: chunk }),
       });
-      if (!result.ok) throw new Error(result.error.message);
+      if (!result.ok) throw new Error("该工具暂时无法完成请求，请基于已有信息继续回答，不要输出工具内部错误细节。");
       return { content: [{ type: "text", text: JSON.stringify(result.data) }], details: result.data };
     },
   }));

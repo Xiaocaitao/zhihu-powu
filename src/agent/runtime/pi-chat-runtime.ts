@@ -87,10 +87,17 @@ export class PiChatRuntime implements ChatRuntime {
       if (event.type === "message_update") {
         const part = event.assistantMessageEvent;
         if (part.type === "text_delta") await emit({ type: "text_delta", delta: part.delta });
-        if (part.type === "thinking_delta") await emit({ type: "thinking_delta", delta: part.delta });
-      } else if (event.type === "tool_execution_start") await emit({ type: "tool_start", tool_call_id: event.toolCallId, tool_name: event.toolName, args: event.args });
-      else if (event.type === "tool_execution_update") await emit({ type: "tool_update", tool_call_id: event.toolCallId, tool_name: event.toolName, update: event.partialResult });
-      else if (event.type === "tool_execution_end") await emit({ type: "tool_end", tool_call_id: event.toolCallId, tool_name: event.toolName, error: event.isError });
+        if (part.type === "thinking_delta") await emit({ type: "thinking_delta" });
+      } else if (event.type === "tool_execution_start") await emit({ type: "tool_start", tool_call_id: event.toolCallId, tool_name: event.toolName });
+      else if (event.type === "tool_execution_update") await emit({ type: "tool_update", tool_call_id: event.toolCallId, tool_name: event.toolName });
+      else if (event.type === "tool_execution_end") {
+        // Only send a module entity reference, never the full tool payload.
+        const details = event.result?.details as { ok?: boolean; data?: { interview?: { interviewId?: string }; record?: { recordId?: string } } } | undefined;
+        const evidenceTool = ["start_interview", "submit_interview_answer", "finish_interview", "record_learning_evidence", "update_learning_evidence", "evaluate_learning_evidence", "generate_learning_review"].includes(event.toolName);
+        await emit({ type: "tool_end", tool_call_id: event.toolCallId, tool_name: event.toolName,
+          error: event.isError || (evidenceTool && details?.ok === false),
+          ...(evidenceTool && details?.ok === true ? { entity_id: details.data?.interview?.interviewId ?? details.data?.record?.recordId } : {}) });
+      }
     });
     const abort = () => agent.abort();
     input.signal.addEventListener("abort", abort, { once: true });

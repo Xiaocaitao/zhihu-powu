@@ -6,7 +6,7 @@ import { createDefaultCapabilityRegistry } from "../src/app/composition-root.ts"
 import { createPowuServer } from "../src/server.ts";
 import { MemoryEvidenceRepository } from "../src/modules/evidence/memory-repository.ts";
 import { EvidenceApplication } from "../src/modules/evidence/application.ts";
-import { MockEvidenceGeneration } from "../src/modules/evidence/generation.ts";
+import { GenerationError, MockEvidenceGeneration } from "../src/modules/evidence/generation.ts";
 import { createEvidenceService } from "../src/modules/evidence/defaults.ts";
 import { defaultPorts, KNOWN_SKILL } from "./support/evidence-fixtures.ts";
 
@@ -20,15 +20,53 @@ async function withServer(run: (base: string) => Promise<void>, registry = creat
   finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 }
 
-function createTestRegistry(repository = new MemoryEvidenceRepository()) {
+function createTestRegistry(repository = new MemoryEvidenceRepository(), generation = new MockEvidenceGeneration()) {
   return createDefaultCapabilityRegistry({
     evidence: new EvidenceApplication(repository, createEvidenceService({
-      generation: new MockEvidenceGeneration(), ports: defaultPorts(),
+      generation, ports: defaultPorts(),
     })),
   });
 }
 
 const headers = { "content-type": "application/json", cookie: "powu_owner=evidence-http-test" };
+
+test('手填项目出题失败后重试、作答、重建应用恢复、再练一场保持范围', async () => {
+  const repository = new MemoryEvidenceRepository();
+  const generator = new MockEvidenceGeneration();
+  const build = generator.buildInterview.bind(generator);
+  let first = true;
+  generator.buildInterview = async input => {
+    if (first) { first = false; throw new GenerationError('GENERATION_FAILED', '测试格式失败'); }
+    return build(input);
+  };
+  const input = { target: { kind: 'project', project: { title: '我的笔记应用', goal: '查询笔记', contribution: '实现缓存' } }, questionCount: 1, focus: '缓存', difficulty: 'introductory' };
+  let completedId = '';
+  await withServer(async base => {
+    const post = async (path: string, body: unknown) => {
+      const res = await fetch(base + path, { method: 'POST', headers, body: JSON.stringify(body) });
+      assert.equal(res.status, 200); return (await res.json()).data;
+    };
+    const failed = await post('/api/evidence/interviews', input);
+    assert.equal(failed.interview.status, 'preparation_failed');
+    const retry = await post('/api/evidence/interviews', { ...input, startNew: true });
+    assert.equal(retry.interview.status, 'active');
+    assert.notEqual(retry.interview.interviewId, failed.interview.interviewId);
+    const answered = await post(`/api/evidence/interviews/${retry.interview.interviewId}/answers`, { questionId: retry.interview.currentQuestion.questionId, answer: '先按关键字检索，再缓存热点查询。' });
+    assert.equal(answered.interview.status, 'completed');
+    assert.equal(answered.interview.reportStatus, 'succeeded');
+    completedId = answered.interview.interviewId;
+  }, createTestRegistry(repository, generator));
+  await withServer(async base => {
+    const saved = await (await fetch(`${base}/api/evidence/interviews/${completedId}`, { headers })).json();
+    assert.deepEqual(saved.data.interview.target, input.target);
+    assert.equal(saved.data.interview.focus, '缓存');
+    const again = await fetch(`${base}/api/evidence/interviews`, { method: 'POST', headers, body: JSON.stringify({ target: saved.data.interview.target, questionCount: saved.data.interview.totalQuestions, difficulty: saved.data.interview.difficulty, focus: saved.data.interview.focus, startNew: true }) });
+    const session = (await again.json()).data.interview;
+    assert.notEqual(session.interviewId, completedId);
+    assert.deepEqual(session.target, input.target);
+    assert.equal(session.difficulty, input.difficulty);
+  }, createTestRegistry(repository));
+});
 
 test("Evidence HTTP 完成记录与面试闭环", async () => {
   await withServer(async base => {
