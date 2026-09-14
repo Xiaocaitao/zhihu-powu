@@ -450,10 +450,12 @@
         status.replaceChildren();
         const done = loading(status, '正在读取这场面试…');
         try {
-          const data = await json(`/api/evidence/interviews/${encodeURIComponent(interviewId)}`);
-          renderSession(data.interview);
+          const data = await json(interviewId ? `/api/evidence/interviews/${encodeURIComponent(interviewId)}` : '/api/evidence/interviews?limit=20');
+          const session = interviewId ? data.interview : data.session;
+          if (!session) { status.append(rowText('当前没有未完成的面试，可选择训练范围开始新一场。')); return; }
+          renderSession(session);
           document.querySelectorAll('#interview-history [data-interview-id]').forEach(row => {
-            row.ariaCurrent = String(row.dataset.interviewId === interviewId);
+            row.ariaCurrent = String(row.dataset.interviewId === session.interviewId);
           });
           status.append(rowText('已打开所选场次，题目、回答和报告显示在上方。'));
           const title = document.querySelector('#interview-question-title');
@@ -846,7 +848,7 @@
       }, options);
 
       document.querySelector('#interview-start-form')?.addEventListener('submit', event => { event.preventDefault(); void startInterview(); });
-      document.querySelector('[data-interview-resume]')?.addEventListener('click', () => { if (!interview.busy) { interview.session = null; void interviewPanel(); } });
+      document.querySelector('[data-interview-resume]')?.addEventListener('click', () => openInterview());
       document.querySelector('#interview-answer-form')?.addEventListener('submit', event => { event.preventDefault(); void submitAnswer(); });
       document.querySelector('[data-interview-finish]')?.addEventListener('click', () => void finishInterview());
       document.querySelector('[data-interview-again]')?.addEventListener('click', () => void startInterview({ reuse: true }));

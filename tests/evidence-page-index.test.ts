@@ -230,7 +230,7 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     assert.equal(element('#interview-question-title').scrolled, true);
     assert.equal(element('#interview-question-title').focused, true);
     assert.equal(element('#interview-history-status').ariaBusy, 'false');
-    await open(active);
+    await element('[data-interview-resume]').listeners.click[0]({});
     assert.equal(element('#interview-answer').value, '尚未提交的真实回答');
     failHistory = true;
     await open(older);
