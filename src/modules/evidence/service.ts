@@ -14,7 +14,7 @@ export class EvidenceService {
   private result<T>(data: T, summary: string, changed = false, entityId?: string): CapabilityResult<T> { return { ok: true, changed, domain: "evidence", entityId, status: changed ? "applied" : "read", summary, data }; }
   private duplicate<T>(ctx: EvidenceContext, data: T, entityId?: string): CapabilityResult<T> { return { ...this.result(data, "重复请求，返回已有结果"), data, entityId }; }
   recordLearningEvidence(ctx: EvidenceContext, input: RecordInput): CapabilityResult<{ record: LearningRecord }> {
-    const parsed = recordInputSchema.parse(input); const key = ctx.requestId ? `${ctx.ownerId}:record:${ctx.requestId}` : undefined;
+    const parsed = recordInputSchema.parse(input); const key = ctx.operationKey ?? (ctx.requestId ? `${ctx.ownerId}:record:${ctx.requestId}` : undefined);
     if (key && this.operations.has(key)) { const id = this.operations.get(key)!; return this.duplicate(ctx, { record: this.records.get(id)! }, id); }
     const now = this.now(); const record: LearningRecord = { ...parsed, durationMinutes: parsed.durationMinutes ?? null, skillIds: parsed.skillIds ?? [], recordId: randomUUID(), ownerId: ctx.ownerId, version: 1, status: "active", createdAt: now, updatedAt: now };
     this.records.set(record.recordId, record); if (key) this.operations.set(key, record.recordId); return this.result({ record }, "学习记录已保存", true, record.recordId);

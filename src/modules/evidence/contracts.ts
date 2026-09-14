@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const contextSchema = z.object({ ownerId: z.string().min(1), requestId: z.string().min(1).optional() });
+export const contextSchema = z.object({ ownerId: z.string().min(1), requestId: z.string().min(1).optional(), operationKey: z.string().min(1).optional() });
 export type EvidenceContext = z.infer<typeof contextSchema>;
 export const recordInputSchema = z.object({ kind: z.enum(["activity", "project_outcome"]), title: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20000), occurredAt: z.string().datetime({ offset: true }), durationMinutes: z.number().int().min(0).nullable().optional(), taskId: z.string().min(1).optional(), skillIds: z.array(z.string().min(1)).max(20).optional() }).strict();
 export type RecordInput = z.infer<typeof recordInputSchema>;
