@@ -64,3 +64,11 @@ test("learning workflow derives a guarded stage from user intent", async () => {
   assert.equal(deriveLearningWorkflowState("确认激活这份学习计划"), "active");
   assert.match(workflowHint("awaiting_confirmation"), /不要调用确认或其他写入工具/);
 });
+
+test("learning workflow gates task and evidence writes by stage", async () => {
+  const { adaptDomainCapabilities } = await import("../src/agent/tools/domain-adapter.ts");
+  const capability = { name: "record_learning_evidence", description: "", inputSchema: { type: "object" }, execute: async () => ({ ok: true, changed: true, domain: "evidence", status: "applied", summary: "saved" }) } as any;
+  const [tool] = adaptDomainCapabilities([capability], { ownerId: "o", sessionId: "s", requestId: "r", operationKey: "k" }, undefined, () => ({ allowed: false, summary: "需要先明确保存" }));
+  const result = await tool.execute("id", {}, new AbortController().signal) as any;
+  assert.equal(result.details.error.code, "WORKFLOW_STAGE_REQUIRED");
+});
