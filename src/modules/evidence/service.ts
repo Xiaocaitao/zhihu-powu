@@ -301,15 +301,19 @@ export class EvidenceService {
     const limit = list.limit ?? 20;
     const filtered = state.records
       .filter(record => record.ownerId === ctx.ownerId && record.status === "active")
-      .filter(record => !from || record.occurredAt >= from)
-      .filter(record => !to || record.occurredAt < to)
+      // 时间比较一律按时刻（epoch）而不是字符串：ISO 允许携带不同偏移量，
+      // 字符串比较会把 +08:00 与 Z 的同一时刻排错。
+      .filter(record => !from || Date.parse(record.occurredAt) >= Date.parse(from))
+      .filter(record => !to || Date.parse(record.occurredAt) < Date.parse(to))
       .filter(record => !kinds || kinds.includes(record.kind))
       .filter(record => !list.taskId || record.taskId === list.taskId)
       .filter(record => !list.skillId || record.skillRefs.some(skill => skill.skillId === list.skillId))
-      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordId.localeCompare(a.recordId));
+      .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || b.recordId.localeCompare(a.recordId));
     const after = list.cursor ? filtered.filter(record => {
       const cursor = decodeCursorPayload(list.cursor!);
-      return record.occurredAt < cursor.at || (record.occurredAt === cursor.at && record.recordId < cursor.id);
+      const at = Date.parse(record.occurredAt);
+      const cursorAt = Date.parse(cursor.at);
+      return at < cursorAt || (at === cursorAt && record.recordId < cursor.id);
     }) : filtered;
     const items = after.slice(0, limit).map(toDto);
     const hasMore = after.length > limit;
@@ -389,8 +393,8 @@ export class EvidenceService {
     }
     const relevantRecords = state.records.filter(record => {
       if (record.ownerId !== ctx.ownerId || record.status !== "active") return false;
-      if (query.from && record.occurredAt < query.from) return false;
-      if (query.to && record.occurredAt >= query.to) return false;
+      if (query.from && Date.parse(record.occurredAt) < Date.parse(query.from)) return false;
+      if (query.to && Date.parse(record.occurredAt) >= Date.parse(query.to)) return false;
       if (query.sources && !query.sources.includes(record.source.domain)) return false;
       return true;
     });
@@ -445,7 +449,7 @@ export class EvidenceService {
     }
     const records = state.records.filter(record =>
       record.ownerId === ctx.ownerId && record.status === "active" &&
-      record.occurredAt >= from && record.occurredAt < to &&
+      Date.parse(record.occurredAt) >= Date.parse(from) && Date.parse(record.occurredAt) < Date.parse(to) &&
       (!input.taskIds?.length || (record.taskId ? input.taskIds.includes(record.taskId) : false)) &&
       (!input.projectIds?.length || (record.projectId ? input.projectIds.includes(record.projectId) : false)) &&
       (!input.skillIds?.length || record.skillRefs.some(skill => input.skillIds!.includes(skill.skillId))));
@@ -750,7 +754,9 @@ export class EvidenceService {
   }
   private affectedReviews(state: EvidenceState, record: LearningRecord) {
     return state.reviews.filter(review =>
-      review.ownerId === record.ownerId && review.range.from <= record.occurredAt && record.occurredAt < review.range.to);
+      review.ownerId === record.ownerId &&
+      Date.parse(review.range.from) <= Date.parse(record.occurredAt) &&
+      Date.parse(record.occurredAt) < Date.parse(review.range.to));
   }
   private withValidity(state: EvidenceState, assessment: Assessment): Assessment {
     const stale = assessment.evidenceIds.some(id => {
