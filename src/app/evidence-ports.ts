@@ -107,9 +107,12 @@ export function createEvidencePorts(dependencies: {
         const job = await dependencies.career.getJob(ctx.ownerId, jobId);
         if (!job) return unavailable("career", "岗位不存在或不可访问");
         const resolved = await dependencies.skills.resolve(job.requirements.map(item => item.skillCode));
-        const skillRefs = resolved.filter(item => item.status === "resolved").flatMap(item => item.candidates);
-        const missing = resolved.filter(item => item.status !== "resolved")
-          .map(item => ({ source: "skills", reason: "岗位引用的能力尚未统一：" + item.input }));
+        const skillRefs = [...new Map(resolved.filter(item => item.status === "resolved")
+          .flatMap(item => item.candidates).map(skill => [skill.skillId, skill])).values()];
+        const unresolved = resolved.flatMap((item, index) => item.status === "resolved" ? []
+          : [job.requirements[index].skillName || item.input]);
+        const missing = unresolved.length ? [{ source: "skills",
+          reason: `部分岗位要求暂未匹配到能力目录（${[...new Set(unresolved)].join("、")}），仍可按岗位描述练习；这些要求暂不形成能力评估。` }] : [];
         if (!job.requirements.length) missing.push({ source: "career", reason: "岗位仅提供原始 JD，尚无结构化能力要求" });
         return available({
           jobId, title: job.title, requirements: job.description, skillRefs,

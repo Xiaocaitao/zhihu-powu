@@ -22,6 +22,25 @@ function fixture(knowledge?: KnowledgeStore) {
   }) };
 }
 
+test("AI 产品岗位能力精确映射到共享目录，未知要求仍说明限制", async () => {
+  const { career, ports } = fixture();
+  const codes = ["user_research", "ai_product_design", "product_iteration", "communication", "llm", "ai_product_experience"];
+  const job = { id: "ai-job", ownerId: "owner", title: "AI 产品经理", description: "基于用户行为改进大模型产品",
+    employmentType: "internship" as const, requirements: codes.map(skillCode => ({ skillCode, skillName: skillCode, importance: "required" as const })),
+    source: "manual" as const, createdAt: new Date().toISOString() };
+  await career.saveJob(job);
+  const result = await ports.career!.getJobRequirements({ ownerId: "owner" }, job.id);
+  assert.equal(result.coverage.complete, true);
+  assert.equal(result.value?.skillRefs.length, codes.length);
+  assert.equal(result.value?.skillRefs.find(skill => skill.skillId === "skill-llm")?.name, "大语言模型");
+  await career.saveJob({ ...job, requirements: [...job.requirements, { skillCode: "unregistered", skillName: "尚未收录的专业能力", importance: "required" }] });
+  const incomplete = await ports.career!.getJobRequirements({ ownerId: "owner" }, job.id);
+  assert.equal(incomplete.coverage.complete, false);
+  assert.equal(incomplete.value?.skillRefs.length, codes.length);
+  assert.match(incomplete.coverage.missing[0].reason, /尚未收录的专业能力/);
+  assert.doesNotMatch(incomplete.coverage.missing[0].reason, /unregistered/);
+});
+
 test("跨模块查询保持真实任务与岗位归属；缺失阶段范围和历史不伪造", async () => {
   const { learning, career, ports } = fixture();
   const now = new Date().toISOString();

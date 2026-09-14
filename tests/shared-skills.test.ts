@@ -49,6 +49,8 @@ test("PostgreSQL 共享目录重复安装不降级、并与内存解析保持一
     const resolved = await skills.resolve(["ＨＴＴＰ", "JS"]);
     assert.equal(resolved[0].candidates[0].skillId, "skill-http");
     assert.equal(resolved[1].candidates[0].skillId, "skill-javascript");
+    const product = await skills.resolve(["user_research", "ai_product_design", "product_iteration", "communication", "llm", "ai_product_experience"]);
+    assert.ok(product.every(item => item.status === "resolved"));
     assert.equal((await repository.list("postgres")).length, 1);
     assert.equal((await repository.list()).length, initialSkillDefinitions.length);
   } finally { await pool.end(); }
