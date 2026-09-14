@@ -62,6 +62,8 @@ export class CareerService implements CareerApplication {
       if (!job) return this.reject("岗位不存在", "NOT_FOUND");
       if (plan.version !== command.payload.expectedVersion) return this.reject("职业规划版本已变化", "VERSION_CONFLICT");
       if (plan.status === "archived") return this.reject("当前规划不可修改", "INVALID_STATE");
+      if (plan.status === "confirmed") return this.reject("规划已确认，不可再修改", "INVALID_STATE");
+      if (plan.targetJobId === job.id) return this.result({ plan, job }, "目标岗位未发生变化", false, plan.id, plan.version, "read");
       const next = { ...plan, targetJobId: job.id, version: plan.version + 1, updatedAt: new Date().toISOString() };
       if (!await this.repo.savePlan(next, plan.version)) return this.reject("职业规划版本已变化", "VERSION_CONFLICT");
       return this.result({ plan: next, job }, "目标岗位已更新", true, plan.id, next.version, "applied");
@@ -135,7 +137,7 @@ export class CareerService implements CareerApplication {
         // Learning is an optional enrichment. Keep the Career dashboard usable.
       }
     }
-    const targetCompanies = input.includeCompanies === false ? [] : await this.listTargetCompanies(ctx, { directionCode: plan?.directionCodes[0], limit: 20 }).then(result => result.items.map(company => ({ ...company, selectionStatus: company.id === plan?.targetCompanyId ? "selected" as const : "candidate" as const })));
+    const targetCompanies = input.includeCompanies === false ? [] : await this.listTargetCompanies(ctx, { limit: 20 }).then(result => result.items.map(company => ({ ...company, selectionStatus: company.id === plan?.targetCompanyId ? "selected" as const : "candidate" as const })));
     const trends = await this.getIndustryTrends(ctx, { directionCodes: plan?.directionCodes, periodDays: input.trendPeriodDays ?? 90 });
     return { plan, activeJob, latestGapAnalysis, targetCompanies, trends, recommendedActions, refreshedAt: new Date().toISOString() };
   }
@@ -154,6 +156,8 @@ export class CareerService implements CareerApplication {
       if (!company) return this.reject("目标企业不存在", "NOT_FOUND");
       if (plan.version !== command.payload.expectedVersion) return this.reject("职业规划版本已变化", "VERSION_CONFLICT");
       if (plan.status === "archived") return this.reject("当前规划不可修改", "INVALID_STATE");
+      if (plan.status === "confirmed") return this.reject("规划已确认，不可再修改", "INVALID_STATE");
+      if (plan.targetCompanyId === company.id) return this.result({ plan, company: { ...company, selectionStatus: "selected" as const } }, "目标企业未发生变化", false, plan.id, plan.version, "read");
       const next = { ...plan, targetCompanyId: company.id, targetCompanyName: company.name, targetCity: company.city ?? plan.targetCity, version: plan.version + 1, updatedAt: new Date().toISOString() };
       if (!await this.repo.savePlan(next, plan.version)) return this.reject("职业规划版本已变化", "VERSION_CONFLICT");
       return this.result({ plan: next, company: { ...company, selectionStatus: "selected" as const } }, "目标企业已更新", true, plan.id, next.version, "applied");

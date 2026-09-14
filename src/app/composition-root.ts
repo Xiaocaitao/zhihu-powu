@@ -42,6 +42,15 @@ function createQueries(
   const profileQuery: ProfileQuery = {
     async getProfileSnapshot(ctx: CareerContext) {
       const profile = await profileService.getUserProfile({ ownerId: ctx.ownerId }, {});
+      if (!profile) {
+        return {
+          directionHints: [],
+          interests: [],
+          currentSkills: [],
+          weeklyAvailableHours: undefined,
+          goalText: undefined,
+        };
+      }
       const fact = (type: string) => profile.facts.find(item => item.factType === type)?.value as Record<string, unknown> | undefined;
       const goal = profile.goals[0]?.value.direction ?? undefined;
       const interests = Array.isArray(fact("interest_direction")?.items) ? fact("interest_direction")!.items as string[] : [];

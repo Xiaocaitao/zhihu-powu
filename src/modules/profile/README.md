@@ -1,24 +1,20 @@
 # Profile 模块
 
-本目录为成员 A 负责的 Profile 模块。职责、公开接口、数据结构和边界以 `docs/成员A-Profile模块架构设计.md`、`docs/成员A-Profile模块规格文档.md` 为准。
+成员 A 负责的用户画像模块，职责、公开接口和边界以项目契约及 Profile 架构文档为准。
 
 ## 当前实现
 
-- Profile 契约、Service、内存 Repository 与 Agent 能力适配
-- Profile 四张表迁移骨架
-- 单元测试覆盖画像读写、用户隔离、完善度、版本冲突和 Tool 委托
+- 九项画像事实与目标方向的读写、分区查询和完善度计算。
+- 公共 `CapabilityContext`、`DomainCommand`、`CapabilityResult` 接入。
+- 四个 Agent Tool：`get_user_profile`、`get_profile_completion`、`save_profile_fact`、`update_user_goal`。
+- 内存 Repository 与 PostgreSQL Repository、Profile 专属迁移及版本冲突校验。
+- 输入结构、测评证据引用、空值和目标方向校验。
 
 ## 验证
 
 ```text
-node node_modules/typescript/bin/tsc --noEmit
+node node_modules/typescript/bin/tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck --allowImportingTsExtensions src/modules/profile/contracts.ts src/modules/profile/repository.ts src/modules/profile/service.ts src/modules/profile/capabilities.ts
 node --test --experimental-strip-types src/modules/profile/tests/profile.test.ts
 ```
 
-结果：5 项测试通过。
-
-- Service 写入校验测评来源证据引用、文本/列表非空和每周时间范围。
-- 当前单元测试共 7 项通过。
-
-- 分区查询仅裁剪返回事实，缺失字段仍按完整画像计算；支持隐藏缺失字段。
-- 目标方向更新支持 expectedVersion 冲突校验；当前单元测试共 10 项通过。
+当前 Profile 独立类型检查通过，单元测试 10 项全部通过。
