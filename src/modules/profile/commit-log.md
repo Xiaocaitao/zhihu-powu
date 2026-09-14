@@ -113,3 +113,10 @@
 - PostgreSQL Repository 增加 BEGIN/COMMIT/ROLLBACK 边界，为后续客户端事务化写入提供统一入口。
 - 增加事务失败回滚测试；Profile 独立类型检查通过，19 项单元测试全部通过。
 - 真实 PostgreSQL 四表原子写入、并发、回滚和 DTO 集成测试仍待数据库环境执行，详见集成测试清单。
+
+## 2026-09-14 · 审计字段与 Repository 事务连接修正
+
+- 增加 Profile 变更审计写入端口，记录事实/目标实体、版本、来源、请求及前后数据；内存事务回滚同时恢复审计快照。
+- PostgreSQL Repository 支持 PoolClient 绑定，事务回调内查询复用同一客户端，并实现审计日志写入。
+- 新增增量迁移 `005-profile-audit.sql`，补齐审计和命令回执字段。
+- 类型检查通过，19 项 Profile 单元测试全部通过；真实 PostgreSQL 集成测试仍待数据库环境。
