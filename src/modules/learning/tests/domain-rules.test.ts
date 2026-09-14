@@ -57,6 +57,18 @@ test("Learning service isolates owners, computes scheduled tasks and supports pr
   assert.equal(progress?.progressPercent, 50);
 });
 
+test("Learning feedback is readable by the owning user and isolated from other users", async () => {
+  const repository = new MemoryLearningRepository();
+  const service = new LearningService(repository);
+  const created = await create(service, baseInput, "feedback-plan");
+  const plan = created.data!.plan;
+  const task = plan.stages[0].tasks[0];
+  const recorded = await service.recordLearningFeedback(command({ planId: plan.id, taskId: task.id, difficulty: "too_hard", note: "需要拆分第一步" }, "feedback-record", plan.version));
+  assert.equal(recorded.ok, true);
+  assert.equal((await service.getLearningFeedback(context, { planId: plan.id })).length, 1);
+  assert.equal((await service.getLearningFeedback({ ownerId: otherOwner }, { planId: plan.id })).length, 0);
+});
+
 test("Learning service enforces transitions, optimistic versions and idempotent replay", async () => {
   const repository = new MemoryLearningRepository();
   const service = new LearningService(repository);

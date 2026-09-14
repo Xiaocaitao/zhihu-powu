@@ -113,6 +113,18 @@ export class PostgresLearningRepository implements LearningRepository {
     );
   }
 
+  async listFeedback(ownerId: string, planId: string) {
+    const result = await this.pool.query<Row>(
+      `SELECT id, owner_id AS "ownerId", plan_id AS "planId", task_id AS "taskId",
+        difficulty, reason, actual_minutes AS "actualMinutes",
+        available_minutes AS "availableMinutes", confidence_score AS "confidenceScore",
+        note, created_at::text AS "createdAt"
+       FROM learning_feedback
+       WHERE owner_id=$1 AND plan_id=$2
+       ORDER BY created_at DESC`, [ownerId, planId]);
+    return result.rows as LearningFeedback[];
+  }
+
   async saveAdjustment(adjustment: LearningAdjustment) {
     await this.pool.query(
       `INSERT INTO learning_plan_adjustments

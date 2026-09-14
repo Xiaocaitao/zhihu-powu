@@ -8,6 +8,7 @@ export interface LearningRepository {
   listPlans?(ownerId: string): Promise<LearningPlan[]>;
   savePlan(plan: LearningPlan): Promise<void>;
   saveFeedback(feedback: LearningFeedback): Promise<void>;
+  listFeedback?(ownerId: string, planId: string): Promise<LearningFeedback[]>;
   saveAdjustment?(adjustment: LearningAdjustment): Promise<void>;
   listAdjustments?(ownerId: string, planId: string): Promise<LearningAdjustment[]>;
   getIdempotency?(ownerId: string, key: string): Promise<LearningIdempotencyRecord | null>;
@@ -34,6 +35,7 @@ export class MemoryLearningRepository implements LearningRepository {
   async listPlans(ownerId: string) { return [...this.plans.values()].filter(x => x.ownerId === ownerId && x.status !== "archived").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(clone); }
   async savePlan(plan: LearningPlan) { this.plans.set(plan.id, clone(plan)); }
   async saveFeedback(feedback: LearningFeedback) { this.feedback.set(feedback.id, clone(feedback)); }
+  async listFeedback(ownerId: string, planId: string) { return [...this.feedback.values()].filter(item => item.ownerId === ownerId && item.planId === planId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(clone); }
   async saveAdjustment(adjustment: LearningAdjustment) { this.adjustments.set(adjustment.planId, [clone(adjustment), ...(this.adjustments.get(adjustment.planId) ?? [])]); }
   async listAdjustments(ownerId: string, planId: string) { return (this.adjustments.get(planId) ?? []).filter(item => item.ownerId === ownerId).map(clone); }
   async getIdempotency(ownerId: string, key: string) { const record = this.idempotency.get(`${ownerId}:${key}`); return record ? clone(record) : null; }

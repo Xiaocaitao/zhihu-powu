@@ -182,12 +182,14 @@ export function createPowuServer(options: Options = {}): Server {
       const planCapability = capabilityRegistry.list().find(capability => capability.name === "get_active_learning_plan");
       const draftsCapability = capabilityRegistry.list().find(capability => capability.name === "get_learning_plan_drafts");
       const tasksCapability = capabilityRegistry.list().find(capability => capability.name === "get_today_learning_tasks");
+      const feedbackCapability = capabilityRegistry.list().find(capability => capability.name === "get_learning_feedback");
       if (!planCapability || !tasksCapability) return send(res, 503, { ok: false, error: "learning_unavailable" });
       try {
         const [planResult, tasksResult] = await Promise.all([planCapability.execute(context, { includeTasks: true }), tasksCapability.execute(context, {})]);
         if (!planResult.ok || !tasksResult.ok) return send(res, 502, { ok: false, error: "learning_read_failed" });
         const draftsResult = draftsCapability ? await draftsCapability.execute(context, {}) : null;
-        return send(res, 200, { ok: true, plan: planResult.data ?? null, drafts: draftsResult?.ok ? draftsResult.data ?? [] : [], tasks: tasksResult.data ?? [] });
+        const feedbackResult = feedbackCapability && planResult.data ? await feedbackCapability.execute(context, { planId: (planResult.data as { id: string }).id }) : null;
+        return send(res, 200, { ok: true, plan: planResult.data ?? null, drafts: draftsResult?.ok ? draftsResult.data ?? [] : [], tasks: tasksResult.data ?? [], feedback: feedbackResult?.ok ? feedbackResult.data ?? [] : [] });
       } catch (error) { console.error("learning read failed", error); return send(res, 502, { ok: false, error: "learning_read_failed" }); }
     }
     if (path === "/api/growth/records" && req.method === "GET") {

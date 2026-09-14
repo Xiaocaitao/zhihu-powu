@@ -5,6 +5,7 @@ export interface LearningApplication {
   getActivePlan(ctx: ModuleContext, input: { includeTasks?: boolean }): Promise<LearningPlan | null>;
   listPlans?(ctx: LearningContext): Promise<LearningPlan[]>;
   getTodayTasks(ctx: ModuleContext, input: { date?: string }): Promise<LearningTask[]>;
+  getLearningFeedback(ctx: ModuleContext, input: { planId?: string }): Promise<LearningFeedback[]>;
   getLearningProgress(ctx: ModuleContext, input: { planId?: string }): Promise<LearningProgress | null>;
   getPlanProgress(ctx: ModuleContext, input: { planId?: string }): Promise<LearningProgress | null>;
   createLearningPlan(command: DomainCommand<CreatePlanInput>): Promise<LearningResult<{ plan: LearningPlan }>>;
