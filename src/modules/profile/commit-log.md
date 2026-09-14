@@ -33,3 +33,9 @@
 - Profile 写入校验失败与版本冲突统一返回 `rejected` 结果及标准错误码，避免向 Agent 泄漏未规范化异常。
 - 完善度按分区全部字段完成后标记分区完成，目标方向为空时继续计入缺失字段。
 - 将旧 Profile 单元测试迁移到公共命令调用方式，10 项测试全部通过。
+
+## 2026-09-14 · PostgreSQL 版本语义与 DTO 映射修正
+
+- PostgreSQL Repository 在携带 `expectedVersion` 时先确认目标记录存在且版本一致，避免不存在记录被错误插入。
+- PostgreSQL 返回值显式映射为公共 DTO，去除数据库字段名和内部 `ownerId` 泄漏。
+- Profile 独立类型检查与 10 项单元测试全部通过。
