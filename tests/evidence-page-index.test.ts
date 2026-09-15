@@ -114,6 +114,10 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     assert.match(html, /scrollToLatest\(chatMessages,true\)/, "历史会话加载后应定位到最新消息");
     assert.match(html, /Agent 正在分析你的问题|正在整理回答/, "页面应展示 Agent 阶段状态");
     assert.doesNotMatch(html, /thinking\.textContent\s*=\s*data\.delta/, "不得把原始思考文本渲染到页面");
+    assert.match(html, /data-learning-action="refresh">直接读取当前计划/, "学习计划读取按钮应直接刷新当前计划");
+    assert.match(html, /data-learning-action="feedback">让 Agent 自动记录反馈/, "学习反馈按钮应支持一键触发 Agent");
+    assert.match(html, /function growthPrompt\(prompt,\{autoSend=false\}\=\{\}\)/, "通用 Agent 入口应支持自动发送");
+    assert.match(html, /action==='refresh'.*await refreshLearning\(\).*autoSend:true/s, "学习计划按钮应直接读取或自动发送反馈");
     assert.ok(html.includes("if(name==='record')void refreshRecords()"), '主导航应调用导出的模块刷新入口');
     for (const id of ['record-project-source', 'record-project-existing', 'interview-target-project-title', 'interview-target-project-goal', 'interview-history-status', 'interview-scope-details', 'interview-scope-notes', 'record-save-status']) {
       assert.ok(html.includes(`id="${id}"`), `${id} 必须存在于真实 HTML，不能只靠测试 DOM 自动虚构`);
