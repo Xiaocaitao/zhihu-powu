@@ -114,10 +114,10 @@ test("主页面两个模块的动作在页内直连接口完成，不跳到会�
     assert.match(html, /scrollToLatest\(chatMessages,true\)/, "历史会话加载后应定位到最新消息");
     assert.match(html, /Agent 正在分析你的问题|正在整理回答/, "页面应展示 Agent 阶段状态");
     assert.doesNotMatch(html, /thinking\.textContent\s*=\s*data\.delta/, "不得把原始思考文本渲染到页面");
-    assert.match(html, /data-learning-action="refresh">直接读取当前计划/, "学习计划读取按钮应直接刷新当前计划");
-    assert.match(html, /data-learning-action="feedback">直接读取当前反馈/, "学习反馈按钮应直接读取已有反馈");
+    assert.match(html, /data-learning-action="refresh">让 Agent 获取当前计划/, "学习计划按钮应触发 Agent 获取当前计划");
+    assert.match(html, /data-learning-action="feedback">让 Agent 获取当前反馈/, "学习反馈按钮应触发 Agent 获取当前反馈");
     assert.match(html, /function growthPrompt\(prompt,\{autoSend=false,returnPage='chat'\}\=\{\}\)/, "通用 Agent 入口应支持自动发送");
-    assert.match(html, /button\.disabled=true.*await refreshLearning\(\)/s, "学习计划按钮应直接读取并刷新当前页面");
+    assert.match(html, /async function runLearningAgent\(button,prompt\).*await sendMessage\(prompt,false\).*await refreshLearning\(\)/s, "学习计划按钮应调用 Agent 并刷新当前页面");
     assert.ok(html.includes("if(name==='record')void refreshRecords()"), '主导航应调用导出的模块刷新入口');
     for (const id of ['record-project-source', 'record-project-existing', 'interview-target-project-title', 'interview-target-project-goal', 'interview-history-status', 'interview-scope-details', 'interview-scope-notes', 'record-save-status']) {
       assert.ok(html.includes(`id="${id}"`), `${id} 必须存在于真实 HTML，不能只靠测试 DOM 自动虚构`);
